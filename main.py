@@ -78,7 +78,7 @@ def make_payment(message):
 
     if user_id in user_data['User_ID'].values:
         bot.reply_to(
-            message, f"click on this link https://paystack.com/pay/mypay-demo")
+            message, f"click on this link https://paystack.com/pay/mypay8")
 
     else:
         bot.reply_to(
