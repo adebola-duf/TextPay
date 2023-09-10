@@ -53,7 +53,7 @@ def create_account(message):
         bot.reply_to(
             message, "Wallet Created 👍. To add money in your wallet /make_payment")
 
-        user_data.to_excel('User_data.xlsx', index=False)
+        user_data.to_excel('user_data.xlsx', index=False)
 
 
 @bot.message_handler(commands=['wallet_balance'])
@@ -113,7 +113,7 @@ def callback_query(call):
                      "Your wallet has been deleted.😞😞")
         user_data.drop(user_data[user_data['User_ID']
                        == user_id].index, inplace=True)
-        user_data.to_excel('User_data.xlsx', index=False)
+        user_data.to_excel('user_data.xlsx', index=False)
 
     elif call.data == "cb_no":
         bot.edit_message_reply_markup(
