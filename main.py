@@ -4,10 +4,18 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pathlib import Path
 import pandas as pd
+import psycopg2
 
 load_dotenv(".env")
 token = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(token, parse_mode=None)
+
+
+connection_params = {"database": "my_pay_database",
+                     "user": "my_pay",
+                     "host": "dpg-cjvehft175es73fokpig-a",
+                     "password": "ydPXwrvBadgExyMQZdu0Dv0UIesC04KF",
+                     "port": "5432"}
 
 
 def gen_markup():
@@ -40,86 +48,124 @@ This is a list of the commands:
 
 @bot.message_handler(commands=['create_wallet'])
 def create_account(message):
-    user_data = pd.read_excel('user_data.xlsx')
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
     user_id = message.from_user.id
 
-    if user_id in user_data['User_ID'].values:
+    select_sql = "SELECT user_id FROM user_wallet WHERE user_id = %s;"
+    insert_sql = "INSERT INTO user_wallet (user_id, wallet_balance) VALUES (%s, %s);"
+
+    cursor.execute(select_sql, (user_id,))
+    result = cursor.fetchone()
+
+    if result:
         bot.reply_to(
             message, "You already have a wallet with us silly 🙃.")
-
     else:
-        user_data = pd.concat([user_data, pd.DataFrame(
-            {'User_ID': [user_id], 'Wallet_Balance': [0]})])
+        wallet_balance = 0
+        cursor.execute(insert_sql, (user_id, wallet_balance))
         bot.reply_to(
             message, "Wallet Created 👍. To add money in your wallet /make_payment")
+        connection.commit()
 
-        user_data.to_excel('user_data.xlsx', index=False)
+    cursor.close()
+    connection.close()
 
 
 @bot.message_handler(commands=['wallet_balance'])
 def wallet_balance(message):
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
 
-    user_data = pd.read_excel('user_data.xlsx')
     user_id = message.from_user.id
 
-    if user_id in user_data['User_ID'].values:
-        bot.reply_to(
-            message, f'Your wallet balance is  ₦{user_data.loc[user_data["User_ID"] == user_id]["Wallet_Balance"].values.item()}')
+    select_sql = "SELECT wallet_balance FROM user_wallet WHERE user_id = %s;"
 
+    cursor.execute(select_sql, (user_id,))
+    result = cursor.fetchone()
+
+    if result:
+        wallet_balance = result[0]
+        bot.reply_to(
+            message, f'Your wallet balance is  ₦{wallet_balance}')
     else:
         bot.reply_to(
             message, "You don't have a wallet with us. To create a wallet click /create_wallet")
 
+    cursor.close()
+    connection.close()
+
 
 @bot.message_handler(commands=['make_payment'])
 def make_payment(message):
-    user_data = pd.read_excel('user_data.xlsx')
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
     user_id = message.from_user.id
 
-    if user_id in user_data['User_ID'].values:
+    select_sql = "SELECT user_id FROM user_wallet WHERE user_id = %s;"
+
+    cursor.execute(select_sql, (user_id,))
+    result = cursor.fetchone()
+
+    if result:
         bot.reply_to(
             message, f"click on this link https://paystack.com/pay/mypay8")
-
     else:
         bot.reply_to(
             message, "You can't make payments since you don't have a wallet. To create a wallet click /create_wallet.")
 
+    cursor.close()
+    connection.close()
+
 
 @bot.message_handler(commands=['delete'])
 def delete(message):
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
 
-    user_data = pd.read_excel('user_data.xlsx')
     user_id = message.from_user.id
 
-    if user_id in user_data['User_ID'].values:
+    select_sql = "SELECT user_id FROM user_wallet WHERE user_id = %s;"
+
+    cursor.execute(select_sql, (user_id,))
+    result = cursor.fetchone()
+
+    if result:
         bot.reply_to(
             message, f"Are you sure you want to delete your wallet?", reply_markup=gen_markup())
-
     else:
         bot.reply_to(
             message, "You can't delete a wallet since you don't have one yet. To create a wallet click /create_wallet.")
 
+    cursor.close()
+    connection.close()
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
 
-    user_data = pd.read_excel('user_data.xlsx')
     user_id = call.from_user.id
+
+    delete_sql = "DELETE FROM user_wallet WHERE user_id = %s;"
 
     if call.data == "cb_yes":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        bot.reply_to(call.message,
-                     "Your wallet has been deleted.😞😞")
-        user_data.drop(user_data[user_data['User_ID']
-                       == user_id].index, inplace=True)
-        user_data.to_excel('user_data.xlsx', index=False)
+        bot.reply_to(call.message, "Your wallet has been deleted.😞😞")
+        cursor.execute(delete_sql, (user_id,))
+        connection.commit()
 
     elif call.data == "cb_no":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        bot.reply_to(
-            call.message, "Great!!! You still have your wallet.")
+        bot.reply_to(call.message, "Great!!! You still have your wallet.")
+
+    cursor.close()
+    connection.close()
 
 
 @bot.message_handler(commands=['support'])
