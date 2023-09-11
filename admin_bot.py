@@ -148,7 +148,9 @@ def deduct_from_wallet(message):
 @bot.message_handler(commands=['done'])
 def done(message):
     global userglobal_id, password, updated_wallets
+
     if password == admin_password:
+        updated_wallets = set(updated_wallets)
         bot.reply_to(
             message, f"You have updated user id {', '.join(set(updated_wallets))} wallets. Keep the grind up Adebola. Goal=🦄")
         userglobal_id = 1
