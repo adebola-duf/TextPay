@@ -8,13 +8,16 @@ import psycopg2
 
 load_dotenv(".env")
 token = os.getenv("BOT_TOKEN")
+db_password = os.getenv("DB_PASSWORD")
+db_host = os.getenv("DB_INTERNAL_HOST")
+
 bot = telebot.TeleBot(token, parse_mode=None)
 
 
 connection_params = {"database": "my_pay_database",
                      "user": "my_pay",
-                     "host": "dpg-cjvehft175es73fokpig-a",
-                     "password": "ydPXwrvBadgExyMQZdu0Dv0UIesC04KF",
+                     "host": db_host,
+                     "password": db_password,
                      "port": "5432"}
 
 
