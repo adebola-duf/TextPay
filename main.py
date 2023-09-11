@@ -8,8 +8,8 @@ import psycopg2
 
 load_dotenv(".env")
 token = os.getenv("BOT_TOKEN")
-db = os.get_env("DB_NAME")
-db_username = os.get_env("DB_USERNAME")
+db = os.getenv("DB_NAME")
+db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
