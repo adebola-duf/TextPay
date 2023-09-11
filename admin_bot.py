@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 load_dotenv(".env")
-token = os.getenv("UPDATE_BOT_TOKEN")
+token = os.getenv("ADMIN_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 admin_password = os.getenv("ADMIN_PASSWORD")
 

@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-token = os.getenv("BOT_TOKEN")
+token = os.getenv("ADMIN_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
