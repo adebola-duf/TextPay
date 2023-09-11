@@ -88,7 +88,7 @@ def process_user_id(message):
             message, f"user id {userglobal_id} is valid. Do you want to:", reply_markup=gen_markup())
     else:
         bot.reply_to(
-            message.chat.id, f"user_id {userglobal_id} doesn't exist.")
+            message, f"user_id {userglobal_id} doesn't exist.")
 
     cursor.close()
     connection.close()
