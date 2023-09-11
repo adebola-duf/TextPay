@@ -3,14 +3,17 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv(".env")
+db = os.get_env("DB_NAME")
+db_username = os.get_env("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_EXTERNAL_HOST")
+db_port = os.getenv("DB_PORT")
 
-conn = psycopg2.connect(database="my_pay_database",
-                        user="my_pay",
+conn = psycopg2.connect(database=db,
+                        user=db_username,
                         host=db_host,
                         password=db_password,
-                        port=5432)
+                        port=db_port)
 
 # SQL statement to create the table
 create_table_sql = """

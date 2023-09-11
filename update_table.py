@@ -3,14 +3,18 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv(".env")
+token = os.getenv("BOT_TOKEN")
+db = os.get_env("DB_NAME")
+db_username = os.get_env("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_EXTERNAL_HOST")
+db_port = os.getenv("DB_PORT")
 
-connection_params = {"database": "my_pay_database",
-                     "user": "my_pay",
+connection_params = {"database": db,
+                     "user": db_username,
                      "host": db_host,
                      "password": db_password,
-                     "port": "5432"}
+                     "port": db_port}
 
 connection = psycopg2.connect(**connection_params)
 cursor = connection.cursor()
