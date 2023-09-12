@@ -9,7 +9,7 @@ token = os.getenv("ADMIN_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_INTERNAL_HOST")
+db_host = os.getenv("DB_EXTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 admin_password = os.getenv("ADMIN_PASSWORD")
 
@@ -113,7 +113,7 @@ def callback_query(call):
 
 
 def add_to_wallet(message):
-    amount = int(message.text)
+    amount = float(message.text)
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
@@ -129,7 +129,7 @@ def add_to_wallet(message):
 
 
 def deduct_from_wallet(message):
-    amount = int(message.text)
+    amount = float(message.text)
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
