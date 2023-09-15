@@ -18,7 +18,7 @@ connection = psycopg2.connect(database=db,
 
 cursor = connection.cursor()
 
-table_name = "user_wallet"
+table_name = "users_wallet"
 drop_table_query = f"DROP TABLE IF EXISTS {table_name};"
 print("Table deleted successfully.")
 

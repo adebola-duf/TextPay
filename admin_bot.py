@@ -54,10 +54,10 @@ def password_enter(message):
     if password == admin_password:
         bot.reply_to(message,
                      text=f"Authorised ✅. You can now go on to do other stuffs.")
-        bot.delete_message(message.chat.id, message.message_id)
     else:
         bot.reply_to(
             message, "Authentication Failed. click on /password for another chance. Don't worry you have unlimited trials and trust me you won't get it 🤗")
+    bot.delete_message(message.chat.id, message.message_id)
 
 
 @bot.message_handler(commands=['enter_user_id'])
@@ -78,7 +78,7 @@ def process_user_id(message):
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
-    select_sql = "SELECT user_id FROM user_wallet WHERE user_id = %s;"
+    select_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
 
     cursor.execute(select_sql, (userglobal_id,))
     result = cursor.fetchone()
@@ -117,7 +117,7 @@ def add_to_wallet(message):
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    update_sql = "UPDATE user_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+    update_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
     cursor.execute(update_sql, (amount, userglobal_id))
 
     connection.commit()
@@ -126,6 +126,8 @@ def add_to_wallet(message):
     bot.send_message(
         message.chat.id, f"You have added ₦{amount} to {userglobal_id}'s wallet. Click /done if you are done for today.")
     updated_wallets.append(str(userglobal_id))
+    bot.send_message(
+        userglobal_id, f"Your account has been credited with ₦{amount}")
 
 
 def deduct_from_wallet(message):
@@ -133,7 +135,7 @@ def deduct_from_wallet(message):
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    update_sql = "UPDATE user_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s;"
+    update_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s;"
     cursor.execute(update_sql, (amount, userglobal_id))
 
     connection.commit()

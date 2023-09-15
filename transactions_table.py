@@ -17,10 +17,16 @@ conn = psycopg2.connect(database=db,
 
 # SQL statement to create the table
 create_table_sql = """
-CREATE TABLE user_wallet (
-    user_id bigint PRIMARY KEY,
-    wallet_balance numeric(10, 2) NOT NULL
-);
+CREATE TABLE transactions(
+transaction_id BIGSERIAL PRIMARY KEY,
+receiver_id BIGINT,
+time_of_transaction TIMESTAMP,
+amount_transferred DECIMAL(12, 2),
+sender_id BIGINT,
+CONSTRAINT fk_user_wallet
+FOREIGN KEY (sender_id)
+REFERENCES users_wallet(user_id)
+)
 """
 
 
@@ -30,6 +36,6 @@ cursor.execute(create_table_sql)
 # Commit the transaction
 conn.commit()
 
-print("Table 'user_wallet' created successfully.")
+print("Table 'transactions' created successfully.")
 cursor.close()
 conn.close()
