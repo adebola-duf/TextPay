@@ -46,7 +46,7 @@ def name_confirmation_markup():
 def send_welcome(message):
 
     bot.reply_to(message, f"""Hi, how are you doing {message.from_user.first_name}?
-Welcome to MyPay. What would you like to do today?
+Welcome to TextPay. What would you like to do today?
 
 This is a list of the commands:
 /create_wallet - To create a wallet.
@@ -203,8 +203,9 @@ def make_payment(message):
             "Pay into your wallet.", web_app=WebAppInfo(url="https://paystack.com/pay/TextPay"))
         markup.add(paystack_web_app_button)
 
+        # the double underscore and backticks are markdown formatting.
         bot.reply_to(
-            message, f"Please tap the button below. Make sure to copy your user id it'd be needed during the process: {message.from_user.id}", reply_markup=markup)
+            message, f"Please tap the button below\. Make sure to copy your user id it'd be needed during the process\. *Click this:* `{message.from_user.id}`", reply_markup=markup, parse_mode="MarkdownV2")
     else:
         bot.reply_to(
             message, "You can't make payments since you don't have a wallet. To create a wallet click /create_wallet.")
