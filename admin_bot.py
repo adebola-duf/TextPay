@@ -113,7 +113,8 @@ def callback_query(call):
 
 
 def add_to_wallet(message):
-    amount = float(message.text)
+    from decimal import Decimal
+    amount = Decimal(message.text)
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 

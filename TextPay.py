@@ -44,25 +44,43 @@ def name_confirmation_markup():
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-
-    bot.reply_to(message, f"""Hi, how are you doing {message.from_user.first_name}?
+    if message.from_user.username:
+        bot.reply_to(message, f"""Hi, how are you doing {message.from_user.username}?
 Welcome to TextPay. What would you like to do today?
-
 This is a list of the commands:
 /create_wallet - To create a wallet.
-                 
+                
 /wallet_balance - To know how much you have in your wallet.
-                 
+                
 /make_payment - To add money into your wallet.
-                 
+                
 /text_to_other - To text money to another user.
-                 
+                
 /transaction_history - To see your last 10 transaction history.
-                 
+                
 /purchase_history - To check your purchase history.
-                 
+                
 /delete - To Delete your wallet. We are supposed to refund the money but I haven't implemented that yet.
-                 
+                
+/support - For support information.""")
+    else:
+        bot.reply_to(message, f"""Hi, how are you doing?
+Welcome to TextPay. What would you like to do today?
+This is a list of the commands:
+/create_wallet - To create a wallet.
+                
+/wallet_balance - To know how much you have in your wallet.
+                
+/make_payment - To add money into your wallet.
+                
+/text_to_other - To text money to another user.
+                
+/transaction_history - To see your last 10 transaction history.
+                
+/purchase_history - To check your purchase history.
+                
+/delete - To Delete your wallet. We are supposed to refund the money but I haven't implemented that yet.
+                
 /support - For support information.""")
 
 
@@ -88,55 +106,64 @@ def create_account(message):
 
 @bot.message_handler(commands=['continue'])
 def xontinue(message):
+    user_id = message.from_user.id
     # implement it in such a way that only if you have an account can you click the continue
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
     select_user_id_from_users_wallet_table_sql = "SELECT user_id from users_wallet WHERE user_id = %s;"
     cursor.execute(select_user_id_from_users_wallet_table_sql,
-                   (message.from_user.id, ))
+                   (user_id, ))
     result = cursor.fetchone()
     if result:
         return
     user_first_name_message = bot.send_message(
         message.from_user.id, "Please enter your first name.")
-    bot.register_next_step_handler(user_first_name_message, first_name)
+    bot.register_next_step_handler(
+        user_first_name_message, first_name, user_id)
 
     cursor.close()
     connection.close()
 
 
-def first_name(user_first_name_message):
+def first_name(user_first_name_message, user_id):
     user_first_name = user_first_name_message.text
     user_last_name_message = bot.send_message(
-        user_first_name_message.from_user.id, f"Ok {user_first_name} please enter your last name.")
+        user_id, f"Ok {user_first_name} please enter your last name.")
     bot.register_next_step_handler(
-        user_last_name_message, last_name, user_first_name)
+        user_last_name_message, last_name, user_first_name, user_id)
 
 
-def last_name(user_last_name_message, user_first_name):
+def last_name(user_last_name_message, user_first_name, user_id):
     user_last_name = user_last_name_message.text
-    user_id = user_last_name_message.from_user.id
-    bot.send_message(user_last_name_message.from_user.id,
-                     f"{user_first_name} {user_last_name}, your wallet has been created 👍.")
+    user_password_message = bot.send_message(
+        user_id, "One more thing. Enter a password for transactions (and remember it!) 🔒 because your text will be deleted immediately after you enter it. If forgotten, 📞 support. 😊")
+    bot.register_next_step_handler(user_password_message, password, user_last_name,
+                                   user_first_name, user_id)
 
+
+def password(user_password_message, user_last_name, user_first_name, user_id):
+    bot.delete_message(user_password_message.chat.id,
+                       user_password_message.message_id)
+    user_password = user_password_message.text
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username)
-    VALUES (%s, %s, %s, %s, %s, %s)"""
+    insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username, transaction_password)
+    VALUES (%s, %s, %s, %s, %s, %s, %s)"""
 
     current_datetime = datetime.datetime.now()
     sql_current_datetime_format = current_datetime.strftime(
         "%Y-%m-%d %H:%M:%S")
     wallet_balance = 0
-    user_name = user_last_name_message.from_user.username
+    user_name = user_password_message.from_user.username
     cursor.execute(insert_sql, (user_id, user_first_name,
-                   user_last_name, sql_current_datetime_format, wallet_balance, user_name))
+                   user_last_name, sql_current_datetime_format, wallet_balance, user_name, user_password))
     connection.commit()
     cursor.close()
     connection.close()
-
+    bot.send_message(user_id,
+                     f"{user_first_name} {user_last_name}, your wallet has been created 👍.")
 # def last_name(user_last_name_message, user_first_name):
 #     user_last_name = user_last_name_message.text
 #     bot.send_message(user_last_name_message.from_user.id, f"Just to confirm, you name is {user_first_name} {user_last_name}", reply_markup=name_confirmation_markup)
@@ -244,16 +271,23 @@ def callback_query(call):
 
     user_id = call.from_user.id
 
-    delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
-    delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
+    
+    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password FROM users_wallet WHERE user_id = %s"
 
     if call.data == "cb_delete_confirmation_yes":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        cursor.execute(delete_user_from_transactions_table_sql, (user_id,))
-        cursor.execute(delete_user_from_user_wallet_table_sql, (user_id,))
-        bot.reply_to(call.message, "Your wallet has been deleted.😞😞")
-        connection.commit()
+        cursor.execute(select_transaction_password_from_user_wallet_table_sql, (user_id,))
+        user_password = cursor.fetchone()[0]
+
+        entered_password_message = bot.reply_to(call.message, "Please enter your password.")
+       
+        bot.register_next_step_handler(entered_password_message, authenticate_password_for_delete, user_password, call)
+
+        cursor.close()
+        connection.close()
+
+   
 
     elif call.data == "cb_delete_confirmation_no":
         bot.edit_message_reply_markup(
@@ -262,6 +296,25 @@ def callback_query(call):
 
     cursor.close()
     connection.close()
+
+def authenticate_password_for_delete(entered_password_message, user_password, call): 
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
+    bot.delete_message(entered_password_message.chat.id, entered_password_message.message_id)
+    entered_password = entered_password_message.text
+    user_id = entered_password_message.from_user.id
+
+    delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
+    delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
+
+    if entered_password == user_password:
+        cursor.execute(delete_user_from_transactions_table_sql, (user_id,))
+        cursor.execute(delete_user_from_user_wallet_table_sql, (user_id,))
+        bot.reply_to(call.message, "Your wallet has been deleted.😞😞")
+        connection.commit()
+    else:
+        bot.send_message(entered_password_message.from_user.id, "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
 
 
 @bot.message_handler(commands=['support'])
@@ -277,17 +330,16 @@ def initiate_send_to_other(message):
 
     sender_user_id = message.from_user.id
 
-    select_user_id_from_user_wallet_table_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
+    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password FROM users_wallet WHERE user_id = %s;"
 
-    cursor.execute(select_user_id_from_user_wallet_table_sql,
+    cursor.execute(select_transaction_password_from_user_wallet_table_sql,
                    (sender_user_id,))
-    result = cursor.fetchone()
+    user_password = cursor.fetchone()[0]
 
-    if result:
-        receiver_user_id_or_username_message = bot.reply_to(
-            message, f'Enter the user id or the username of the person you want to text ₦₦ to.')
-        bot.register_next_step_handler(
-            receiver_user_id_or_username_message, validate_receiver_id)
+    if user_password:
+        entered_password_message = bot.reply_to(message, "Please enter your password.")
+       
+        bot.register_next_step_handler(entered_password_message, authenticate_password, user_password)
     else:
         bot.reply_to(
             message, "You can't text ₦₦ to another user since you don't have a wallet with us. To create a wallet click /create_wallet")
@@ -295,6 +347,16 @@ def initiate_send_to_other(message):
     cursor.close()
     connection.close()
 
+def authenticate_password(entered_password_message, user_password): 
+    bot.delete_message(entered_password_message.chat.id, entered_password_message.message_id)
+    entered_password = entered_password_message.text
+    if entered_password == user_password:
+        bot.send_message(entered_password_message.from_user.id, "Password is correct")
+        receiver_user_id_or_username_message = bot.send_message(entered_password_message.from_user.id, f'Enter the user id or the username of the person you want to text ₦₦ to.')
+        bot.register_next_step_handler(
+                    receiver_user_id_or_username_message, validate_receiver_id)
+    else:
+        bot.send_message(entered_password_message.from_user.id, "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
 
 def validate_receiver_id(receiver_user_id_or_username_message):
     connection = psycopg2.connect(**connection_params)
@@ -335,7 +397,7 @@ def validate_receiver_id(receiver_user_id_or_username_message):
     if result:
         receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance = result
         amount_to_send_message = bot.reply_to(
-            receiver_user_id_or_username_message, f"How much do you want to text to @{receiver_user_id_or_username}?" if is_receiver_id else f"How much do you want to text to {receiver_user_id_or_username}?")
+            receiver_user_id_or_username_message, f"How much do you want to text to {receiver_user_id_or_username}?" if is_receiver_id else f"How much do you want to text to @{receiver_user_id_or_username}?")
         bot.register_next_step_handler(
             amount_to_send_message, actual_send_to_other, receiver_user_id_or_username, is_receiver_id, receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance)
     else:
@@ -434,12 +496,12 @@ def transaction_history(message):
                 cursor.execute(
                     select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
-                history += f"{i + 1}. At {time_of_transaction}, you texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}\n"
+                history += f"{i + 1}. At {time_of_transaction}, you texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}\n\n"
             else:  # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                 cursor.execute(
                     select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
-                history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}\n"
+                history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}\n\n"
 
         bot.reply_to(message, history)
 
@@ -455,3 +517,10 @@ bot.polling()
 # but then again, i just thought that not every telegram user has a username. so it might not work well. but then everyone has a user id. So i'm thinking,
 # since i mandate people to give me their names at the start, maybe i'm going to use their names when they text money to others. So like the message you'd be
 # seeing would be something like <first name> <last name> texted you x amount.
+
+# PROBLEMS
+# When a user deletes their wallet, it deletes only transactions that they initiated. So if they click transaction history,
+#  they would still see that someone texted them money. But they won't sha see that they texted anyone money
+
+# when you want to text money to someone using their user_id, there should be a way to like confirm who you are texting to
+# so a reply would be how much do you want to text to <username of the corresponding user_id> or <first name last name of the corresponding uer_id>

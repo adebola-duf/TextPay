@@ -23,7 +23,8 @@ username VARCHAR(40),
 first_name VARCHAR(40),
 last_name VARCHAR(40),
 wallet_creation_date TIMESTAMP,
-wallet_balance DECIMAL(12, 2)
+wallet_balance DECIMAL(12, 2),
+transaction_password VARCHAR(40)
 )
 """
 
