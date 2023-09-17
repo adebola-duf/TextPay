@@ -7,13 +7,18 @@ import pandas as pd
 import psycopg2
 import datetime
 from decimal import Decimal
+import qrcode
+import io
+import random
+import qrcode
+
 
 load_dotenv(".env")
 token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, parse_mode=None)
@@ -55,6 +60,8 @@ This is a list of the commands:
 /make_payment - To add money into your wallet.
                 
 /text_to_other - To text money to another user.
+                     
+/create_payment_qr - Generate a QR code for accepting payments securely and conveniently.
                 
 /transaction_history - To see your last 10 transaction history.
                 
@@ -129,7 +136,7 @@ def xontinue(message):
 def first_name(user_first_name_message, user_id):
     user_first_name = user_first_name_message.text
     user_last_name_message = bot.send_message(
-        user_id, f"Ok {user_first_name} please enter your last name.")
+        user_id, f"Nice name you have 😊. {user_first_name} please enter your last name.")
     bot.register_next_step_handler(
         user_last_name_message, last_name, user_first_name, user_id)
 
@@ -509,9 +516,56 @@ def transaction_history(message):
     connection.close()
 
 
+@bot.message_handler(commands=['create_payment_qr'])
+def create_payment_qr(message):
+    amount_to_charge_message = bot.reply_to(message, "How much do you want to charge?")
+    bot.register_next_step_handler(amount_to_charge_message, qr_amount_processor)
+    
+def qr_amount_processor(amount_to_charge_message):
+
+    amount_to_charge = Decimal(amount_to_charge_message.text)
+    charger_id = amount_to_charge_message.from_user.id
+    charger_usernamme = amount_to_charge_message.from_user.username
+    qr_transaction_number = random.randint(1000000000, 3000000000)
+
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
+    update_qr_transactions_password_in_users_wallet_sql = """ UPDATE users_wallet SET qr_transaction_number = %s WHERE user_id = %s RETURNING user_id;"""
+
+    cursor.execute(update_qr_transactions_password_in_users_wallet_sql, (qr_transaction_number, charger_id))
+    charger_id_from_users_wallet_table = cursor.fetchone()
+
+    if charger_id_from_users_wallet_table:
+        connection.commit()
+        qr = qrcode.QRCode(
+            version=2,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=2
+        )
+        qr.add_data(f"{charger_usernamme}, {charger_id}, {amount_to_charge}, {qr_transaction_number}")
+        qr_img = qr.make_image(back_color="white", fill_color='black')
+
+        # We create a io.BytesIO buffer to store the QR code image in memory without saving it as a file.
+        buffer = io.BytesIO()
+        # The QR code is generated and saved to the buffer as a PNG image.
+        qr_img.save(buffer, format='PNG')
+        buffer.seek(0)
+        
+        # Send the QR code image as a photo message
+        bot.send_photo(amount_to_charge_message.chat.id, photo=buffer)
+    else:
+        # User does not exist
+        bot.send_message("Dude or Lady create a wallet first.")
+
+
+    cursor.close()
+    connection.close()
+
+    
+
 bot.polling()
-
-
 # implement the get my id
 # where i stopped today is the place where whether to use username of user_id got confusing. I already started converting the querying with user id in my code
 # but then again, i just thought that not every telegram user has a username. so it might not work well. but then everyone has a user id. So i'm thinking,
