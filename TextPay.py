@@ -18,7 +18,7 @@ token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_INTERNAL_HOST")
+db_host = os.getenv("DB_EXTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, parse_mode=None)
@@ -39,12 +39,12 @@ def delete_confirmation_markup():
     return markup
 
 
-def name_confirmation_markup():
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 2
-    markup.add(InlineKeyboardButton("Yes", callback_data="cb_name_confirmation_yes"),
-               InlineKeyboardButton("No", callback_data="cb_name_confirmation_no"))
-    return markup
+# def name_confirmation_markup():
+#     markup = InlineKeyboardMarkup()
+#     markup.row_width = 2
+#     markup.add(InlineKeyboardButton("Yes", callback_data="cb_name_confirmation_yes"),
+#                InlineKeyboardButton("No", callback_data="cb_name_confirmation_no"))
+#     return markup
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -61,7 +61,9 @@ This is a list of the commands:
                 
 /text_to_other - To text money to another user.
                      
-/create_payment_qr - Generate a QR code for accepting payments securely and conveniently.
+/create_payment_qr - Generate a QR code for accepting payments.
+                     
+/scan_payment_qr - To scan a QR code for making payment.
                 
 /transaction_history - To see your last 10 transaction history.
                 
@@ -544,7 +546,8 @@ def qr_amount_processor(amount_to_charge_message):
             box_size=10,
             border=2
         )
-        qr.add_data(f"{charger_usernamme}, {charger_id}, {amount_to_charge}, {qr_transaction_number}")
+        # qr.add_data(f"{charger_usernamme}: {amount_to_charge}{charger_id}{qr_transaction_number}")
+        qr.add_data(f"{charger_id}:{amount_to_charge}:{qr_transaction_number}")
         qr_img = qr.make_image(back_color="white", fill_color='black')
 
         # We create a io.BytesIO buffer to store the QR code image in memory without saving it as a file.
@@ -563,9 +566,79 @@ def qr_amount_processor(amount_to_charge_message):
     cursor.close()
     connection.close()
 
+def qr_send_to_charger_confirmation_markup():
+    markup = InlineKeyboardMarkup()
+    markup.row_width(2)
+    confirm_button = InlineKeyboardButton(text="Confirm ✅", callback_data="qr_send_to_charger_confirmed")
+    decline_button = InlineKeyboardButton(text="Decline 🚫", callback_data="qr_send_to_charger_declined")
+    markup.add(confirm_button, decline_button)
+    return markup
     
+@bot.message_handler(commands=['scan_payment_qr'])
+def scan_payment_qr(message):
+    markup = InlineKeyboardMarkup()
+    qr_scanner_web_app = InlineKeyboardButton(
+        "Scan QR", web_app=WebAppInfo(url="https://www.online-qr-scanner.com/"))
+    markup.add(qr_scanner_web_app)
+    bot.reply_to(message, "Click this button.", reply_markup=markup)
+
+    qr_code_content_message = bot.send_message(message.chat.id, "Enter the code generated.")
+    bot.register_next_step_handler(qr_code_content_message, qr_code_content_handler)
+
+def qr_code_content_handler(qr_code_content_message):
+    qr_code_content = qr_code_content_message.text
+    qr_code_content = qr_code_content.split(":")
+    charger_id = int(qr_code_content[0])
+    amount_to_charge = Decimal(qr_code_content[1])
+    qr_transaction_number = int(qr_code_content[2])
+
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
+    select_charger_id_from_users_wallet_table = "SELECT qr_transaction_number, first_name, last_name from users_wallet where user_id = %s"
+    cursor.execute(select_charger_id_from_users_wallet_table, (charger_id, ))
+    result = cursor.fetchone()
+    retrieved_transaction_number, name_first, name_last = result
+    if retrieved_transaction_number == qr_transaction_number:
+        bot.send_message(qr_code_content_message.chat.id, f"Are you sure you want to send {amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
+    else:
+        bot.send_message(qr_code_content_message.chat.id, "This message is from textpay, that person that initiated this transaction might be fraudulent.")
+    cursor.close()
+    connection.close()
+
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("qr_send_to"))
+def callback_query(call):
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
+    if call.data == "qr_send_to_charger_confirmed":
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        bot.reply_to("So, I haven't implemented the stuff that happens when you click confirm.")
+
+    elif call.data == "qr_send_to_charger_declined":
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # i think i want this one to send a message to both parties involved in the transaction that it has been cancelled
+        bot.reply_to(call.message, "Transaction has been cancelled.")
+
+    cursor.close()
+
+
+
 
 bot.polling()
+
+
+
+#this qr stuff, i think something might go wrong if a user 1 creates a qr for user 2 to scan and pay
+# and before both of them are done settling the payment, user 1 creates another qr. The previous qr beomes useless and only the new qr would be the usable one/
+# since the new qr woul have a new transaction number which would be the only number attached to user 1
+
+
+
 # implement the get my id
 # where i stopped today is the place where whether to use username of user_id got confusing. I already started converting the querying with user id in my code
 # but then again, i just thought that not every telegram user has a username. so it might not work well. but then everyone has a user id. So i'm thinking,
