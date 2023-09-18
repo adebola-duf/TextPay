@@ -11,6 +11,7 @@ import qrcode
 import io
 import random
 import qrcode
+import time
 
 
 load_dotenv(".env")
@@ -18,7 +19,7 @@ token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, parse_mode=None)
@@ -83,7 +84,11 @@ This is a list of the commands:
 /make_payment - To add money into your wallet.
                 
 /text_to_other - To text money to another user.
-                
+                     
+/create_payment_qr - Generate a QR code for accepting payments.
+                     
+/scan_payment_qr - To scan a QR code for making payment.
+                     
 /transaction_history - To see your last 10 transaction history.
                 
 /purchase_history - To check your purchase history.
@@ -348,7 +353,7 @@ def initiate_send_to_other(message):
     if user_password:
         entered_password_message = bot.reply_to(message, "Please enter your password.")
        
-        bot.register_next_step_handler(entered_password_message, authenticate_password, user_password)
+        bot.register_next_step_handler(entered_password_message, authenticate_password_for_text_to_other_transactions, user_password)
     else:
         bot.reply_to(
             message, "You can't text ₦₦ to another user since you don't have a wallet with us. To create a wallet click /create_wallet")
@@ -356,7 +361,7 @@ def initiate_send_to_other(message):
     cursor.close()
     connection.close()
 
-def authenticate_password(entered_password_message, user_password): 
+def authenticate_password_for_text_to_other_transactions(entered_password_message, user_password): 
     bot.delete_message(entered_password_message.chat.id, entered_password_message.message_id)
     entered_password = entered_password_message.text
     if entered_password == user_password:
@@ -560,7 +565,7 @@ def qr_amount_processor(amount_to_charge_message):
         bot.send_photo(amount_to_charge_message.chat.id, photo=buffer)
     else:
         # User does not exist
-        bot.send_message("Dude or Lady create a wallet first.")
+        bot.send_message(amount_to_charge_message.chat.id, "Dude or Lady create a wallet first.")
 
 
     cursor.close()
@@ -568,7 +573,7 @@ def qr_amount_processor(amount_to_charge_message):
 
 def qr_send_to_charger_confirmation_markup():
     markup = InlineKeyboardMarkup()
-    markup.row_width(2)
+    markup.row_width = 2
     confirm_button = InlineKeyboardButton(text="Confirm ✅", callback_data="qr_send_to_charger_confirmed")
     decline_button = InlineKeyboardButton(text="Decline 🚫", callback_data="qr_send_to_charger_declined")
     markup.add(confirm_button, decline_button)
@@ -576,20 +581,31 @@ def qr_send_to_charger_confirmation_markup():
     
 @bot.message_handler(commands=['scan_payment_qr'])
 def scan_payment_qr(message):
+
     markup = InlineKeyboardMarkup()
     qr_scanner_web_app = InlineKeyboardButton(
-        "Scan QR", web_app=WebAppInfo(url="https://www.online-qr-scanner.com/"))
+        "Scan QR", web_app=WebAppInfo(url="https://qr-code-scanner-two.vercel.app/"))
     markup.add(qr_scanner_web_app)
-    bot.reply_to(message, "Click this button.", reply_markup=markup)
 
+    bot.reply_to(message, "Make sure to copy the code generated.", reply_markup=markup)
+    time.sleep(2.5)
     qr_code_content_message = bot.send_message(message.chat.id, "Enter the code generated.")
     bot.register_next_step_handler(qr_code_content_message, qr_code_content_handler)
 
+qr_charger_id_dict = {}
+qr_amount_to_charge_dict = {}
+
 def qr_code_content_handler(qr_code_content_message):
+
     qr_code_content = qr_code_content_message.text
     qr_code_content = qr_code_content.split(":")
+
     charger_id = int(qr_code_content[0])
+    qr_charger_id_dict[qr_code_content_message.from_user.id] = charger_id
+
     amount_to_charge = Decimal(qr_code_content[1])
+    qr_amount_to_charge_dict[qr_code_content_message.from_user.id] = amount_to_charge
+
     qr_transaction_number = int(qr_code_content[2])
 
     connection = psycopg2.connect(**connection_params)
@@ -600,33 +616,77 @@ def qr_code_content_handler(qr_code_content_message):
     result = cursor.fetchone()
     retrieved_transaction_number, name_first, name_last = result
     if retrieved_transaction_number == qr_transaction_number:
-        bot.send_message(qr_code_content_message.chat.id, f"Are you sure you want to send {amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
+        bot.send_message(qr_code_content_message.chat.id, f"Are you sure you want to send ₦{amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
     else:
-        bot.send_message(qr_code_content_message.chat.id, "This message is from textpay, that person that initiated this transaction might be fraudulent.")
+        bot.send_message(qr_code_content_message.chat.id, "The QR code that was scanned is not from TextPay, that person that initiated this transaction might be fraudulent.")
     cursor.close()
     connection.close()
 
-
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("qr_send_to"))
 def callback_query(call):
-    connection = psycopg2.connect(**connection_params)
-    cursor = connection.cursor()
-
+    
     if call.data == "qr_send_to_charger_confirmed":
+        connection = psycopg2.connect(**connection_params)
+        cursor = connection.cursor()
+
+        select_user_password_from_users_wallet_table = "SELECT transaction_password FROM users_wallet WHERE user_id = %s"
+        cursor.execute(select_user_password_from_users_wallet_table, (call.from_user.id, ))
+        user_password = cursor.fetchone()[0]
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        bot.reply_to("So, I haven't implemented the stuff that happens when you click confirm.")
+
+        entered_pasword_message = bot.reply_to(call.message, "Enter your password to complete the transaction.")
+        bot.register_next_step_handler(entered_pasword_message, authenticate_password_for_qr_transactions, user_password)
 
     elif call.data == "qr_send_to_charger_declined":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         # i think i want this one to send a message to both parties involved in the transaction that it has been cancelled
         bot.reply_to(call.message, "Transaction has been cancelled.")
-
     cursor.close()
+    connection.close()
 
+# remember to include the part where the transactions table is updated
+def authenticate_password_for_qr_transactions(entered_password_message, user_password): 
+    bot.delete_message(entered_password_message.chat.id, entered_password_message.message_id)
+    chargee_id = entered_password_message.from_user.id
+    charger_id = qr_charger_id_dict[chargee_id]
+    amount_to_charge = qr_amount_to_charge_dict[chargee_id]
 
+    entered_password = entered_password_message.text
+
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+
+    select_chargers_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
+    select_chargees_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
+
+    update_chargers_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s where user_id = %s"
+    update_chargees_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s where user_id = %s"
+
+    cursor.execute(select_chargers_info_from_users_wallet_table_sql, (charger_id, ))
+    charger_username, charger_first_name, charger_last_name, charger_wallet_balance = cursor.fetchone()
+    cursor.execute(select_chargees_info_from_users_wallet_table_sql, (chargee_id, ))
+    chargee_username, chargee_first_name, chargee_last_name, chargee_wallet_balance = cursor.fetchone()
+
+    if entered_password == user_password:
+        cursor.execute(update_chargers_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, charger_id))
+        cursor.execute(update_chargees_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, chargee_id))
+        # checking if the charger has a username else use their firstname and lastname
+        if charger_username:
+            bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to @{charger_username}. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+            bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+        else:
+            bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to {charger_first_name} {chargee_last_name} . You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+            bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+
+    else:
+        bot.send_message(entered_password_message.from_user.id, "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
+        bot.send_message()
+
+    connection.commit()
+    cursor.close()
+    connection.close()
 
 
 bot.polling()
@@ -651,3 +711,9 @@ bot.polling()
 
 # when you want to text money to someone using their user_id, there should be a way to like confirm who you are texting to
 # so a reply would be how much do you want to text to <username of the corresponding user_id> or <first name last name of the corresponding uer_id>
+
+
+# so i just thought of something. how to use the bot for transactions in offline mode. so when you are online, you generate a qr code that contains your user_id,
+# the amount and the id of the recipient so you can take your device around even when you are offline and you can pay for something by scanning the qr code.
+# so on the pos, it scans your qr code and then asks you to input your password. if the id on the qr and the password match, then it would print the paper
+# with the amount you want to pay.
