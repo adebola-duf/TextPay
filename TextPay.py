@@ -670,16 +670,27 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
     chargee_username, chargee_first_name, chargee_last_name, chargee_wallet_balance = cursor.fetchone()
 
     if entered_password == user_password:
-        cursor.execute(update_chargers_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, charger_id))
-        cursor.execute(update_chargees_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, chargee_id))
-        # checking if the charger has a username else use their firstname and lastname
-        if charger_username:
-            bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to @{charger_username}. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
-            bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
-        else:
-            bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to {charger_first_name} {chargee_last_name} . You have ₦{chargee_wallet_balance - amount_to_charge} left.")
-            bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+        if chargee_wallet_balance >= amount_to_charge:
+            cursor.execute(update_chargers_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, charger_id))
+            cursor.execute(update_chargees_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, chargee_id))
 
+            current_datetime = datetime.datetime.now()
+            sql_current_datetime_format = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+            insert_sql_into_transactions_table = """INSERT INTO transactions(transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id)
+            VALUES (DEFAULT, %s, %s, %s, %s)"""
+            cursor.execute(insert_sql_into_transactions_table, (charger_id, sql_current_datetime_format, amount_to_charge, chargee_id))
+            # checking if the charger has a username else use their firstname and lastname
+            if charger_username:
+                bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to @{charger_username}. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+                bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+            else:
+                bot.send_message(entered_password_message.from_user.id, f"Great!!! You have texted ₦{amount_to_charge} to {charger_first_name} {charger_last_name} . You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+                bot.send_message(chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+        elif chargee_wallet_balance < amount_to_charge:
+            bot.send_message(chargee_id, f"You don't have up to ₦{amount_to_charge} in your wallet.")
+        else:
+            bot.send_message(chargee_id, "You can't text someone a -ve number. Math gee 😂")
     else:
         bot.send_message(entered_password_message.from_user.id, "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
         bot.send_message()
