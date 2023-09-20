@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import psycopg2
 import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import qrcode
 import io
 import random
@@ -19,7 +19,7 @@ token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_INTERNAL_HOST")
+db_host = os.getenv("DB_EXTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, parse_mode=None)
@@ -436,7 +436,13 @@ def validate_receiver_id(receiver_user_id_or_username_message):
 
 
 def actual_send_to_other(amount_to_send_message, receiver_user_id_or_username, is_receiver_id, receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance):
-    amount_to_send = Decimal(amount_to_send_message.text)
+    try:
+        amount_to_send = Decimal(amount_to_send_message.text)
+    except InvalidOperation:
+        bot.send_message(amount_to_send_message.chat.id,
+                         "You entered an invalid amount. 🤔")
+        return
+
     sender_id = amount_to_send_message.from_user.id
 
     connection = psycopg2.connect(**connection_params)
@@ -485,7 +491,7 @@ def actual_send_to_other(amount_to_send_message, receiver_user_id_or_username, i
                      f"You don't have up to ₦{amount_to_send} in your wallet.")
     else:
         bot.reply_to(amount_to_send_message,
-                     "You can't text someone a -ve number. Math gee 😂")
+                     "You can't text someone a -ve amount. Math gee 😂")
 
     # check chatgpt for an option where if any of the add sql or deduct sql fails, we don't do anything in the database.
     connection.commit()
@@ -560,11 +566,16 @@ def generate_qr_id(cursor, charger_id):
 
 
 def qr_amount_processor(amount_to_charge_message):
+    try:
+        amount_to_charge = Decimal(amount_to_charge_message.text)
+    except InvalidOperation:
+        bot.send_message(amount_to_charge_message.chat.id,
+                         "You entered an invalid amount. 🤔")
+        return
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    amount_to_charge = Decimal(amount_to_charge_message.text)
     charger_id = amount_to_charge_message.from_user.id
     charger_usernamme = amount_to_charge_message.from_user.username
     qr_id = generate_qr_id(cursor, charger_id)
@@ -574,7 +585,7 @@ def qr_amount_processor(amount_to_charge_message):
         select_charger_id_from_users_wallet_table_sql, (charger_id, ))
     charger_id_from_users_wallet_table = cursor.fetchone()
 
-    if charger_id_from_users_wallet_table:
+    if charger_id_from_users_wallet_table and amount_to_charge > 0:
         insert_qr_info_into_qr_info_table_sql = "INSERT INTO qr_info (qr_id, user_id, qr_used) VALUES (%s, %s, %s)"
         cursor.execute(insert_qr_info_into_qr_info_table_sql,
                        (qr_id, charger_id, False))
@@ -597,6 +608,12 @@ def qr_amount_processor(amount_to_charge_message):
 
         # Send the QR code image as a photo message
         bot.send_photo(amount_to_charge_message.chat.id, photo=buffer)
+    elif charger_id_from_users_wallet_table and amount_to_charge == 0:
+        bot.send_message(amount_to_charge_message.chat.id,
+                         "You cannot charge someone a ₦0. Trust 😂")
+    elif charger_id_from_users_wallet_table and amount_to_charge < 0:
+        bot.send_message(amount_to_charge_message.chat.id,
+                         "You cannot charge someone a -ve amount. Math gee 😂")
     else:
         # User does not exist
         bot.send_message(amount_to_charge_message.chat.id,
@@ -644,15 +661,17 @@ def qr_code_content_handler(qr_code_content_message):
     qr_code_content = qr_code_content_message.text
     qr_code_content = qr_code_content.split(":")
 
-    # an error might occur if the user scans a qr code not from textpay since the format would be different. For instance, the qr
-    # scanned could be Adebola is a fine boy. In this case, int(qr_code_content[0]) would return an error. so handle this later
-    charger_id = int(qr_code_content[0])
+    # this is the error handling for if a person scans a qr code not from textpay.
+    try:
+        charger_id, amount_to_charge, qr_id = int(qr_code_content[0]), Decimal(
+            qr_code_content[1]), int(qr_code_content[2])
+    except (IndexError, ValueError, InvalidOperation):
+        bot.send_message(qr_code_content_message.chat.id,
+                         "You scanned a wrong qr code. 😪")
+        return
+
     qr_charger_id_dict[qr_code_content_message.from_user.id] = charger_id
-
-    amount_to_charge = Decimal(qr_code_content[1])
     qr_amount_to_charge_dict[qr_code_content_message.from_user.id] = amount_to_charge
-
-    qr_id = int(qr_code_content[2])
     qr_id_dict[qr_code_content_message.from_user.id] = qr_id
 
     connection = psycopg2.connect(**connection_params)
@@ -775,7 +794,7 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
                 chargee_id, f"You don't have up to ₦{amount_to_charge} in your wallet.")
         else:
             bot.send_message(
-                chargee_id, "You can't text someone a -ve number. Math gee 😂")
+                chargee_id, "You can't text someone a -ve amount. Math gee 😂")
     else:
         bot.send_message(entered_password_message.from_user.id,
                          "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
