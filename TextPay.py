@@ -35,8 +35,8 @@ connection_params = {"database": db,
 def delete_confirmation_markup():
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
-    markup.add(InlineKeyboardButton("Yes", callback_data="cb_delete_confirmation_yes"),
-               InlineKeyboardButton("No", callback_data="cb_delete_confirmation_no"))
+    markup.add(InlineKeyboardButton("Yes ✅", callback_data="cb_delete_confirmation_yes"),
+               InlineKeyboardButton("No 🚫", callback_data="cb_delete_confirmation_no"))
     return markup
 
 
@@ -323,9 +323,11 @@ def authenticate_password_for_delete(entered_password_message, user_password, ca
 
     delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
     delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
+    delete_user_from_qr_info_table_sql = "DELETE FROM qr_info WHERE user_id = %s;"
 
     if entered_password == user_password:
         cursor.execute(delete_user_from_transactions_table_sql, (user_id,))
+        cursor.execute(delete_user_from_qr_info_table_sql, (user_id,))
         cursor.execute(delete_user_from_user_wallet_table_sql, (user_id,))
         bot.reply_to(call.message, "Your wallet has been deleted.😞😞")
         connection.commit()
@@ -542,23 +544,40 @@ def create_payment_qr(message):
         amount_to_charge_message, qr_amount_processor)
 
 
-def qr_amount_processor(amount_to_charge_message):
+def generate_qr_id(cursor, charger_id):
+    while True:
+        # Generate a random number within your desired range
+        # Adjust the range as needed
+        random_number = random.randint(10000000, 99999999)
 
-    amount_to_charge = Decimal(amount_to_charge_message.text)
-    charger_id = amount_to_charge_message.from_user.id
-    charger_usernamme = amount_to_charge_message.from_user.username
-    qr_transaction_number = random.randint(1000000000, 3000000000)
+        # Check if the generated number already exists in the table
+        cursor.execute(
+            "SELECT COUNT(*) FROM qr_info WHERE qr_id = %s AND user_id = %s;", (random_number, charger_id))
+        count = cursor.fetchone()[0]
+
+        if count == 0:
+            return random_number  # Return the unique random number
+
+
+def qr_amount_processor(amount_to_charge_message):
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    update_qr_transactions_password_in_users_wallet_sql = """ UPDATE users_wallet SET qr_transaction_number = %s WHERE user_id = %s RETURNING user_id;"""
+    amount_to_charge = Decimal(amount_to_charge_message.text)
+    charger_id = amount_to_charge_message.from_user.id
+    charger_usernamme = amount_to_charge_message.from_user.username
+    qr_id = generate_qr_id(cursor, charger_id)
 
-    cursor.execute(update_qr_transactions_password_in_users_wallet_sql,
-                   (qr_transaction_number, charger_id))
+    select_charger_id_from_users_wallet_table_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s"
+    cursor.execute(
+        select_charger_id_from_users_wallet_table_sql, (charger_id, ))
     charger_id_from_users_wallet_table = cursor.fetchone()
 
     if charger_id_from_users_wallet_table:
+        insert_qr_info_into_qr_info_table_sql = "INSERT INTO qr_info (qr_id, user_id, qr_used) VALUES (%s, %s, %s)"
+        cursor.execute(insert_qr_info_into_qr_info_table_sql,
+                       (qr_id, charger_id, False))
         connection.commit()
         qr = qrcode.QRCode(
             version=2,
@@ -567,7 +586,7 @@ def qr_amount_processor(amount_to_charge_message):
             border=2
         )
         # qr.add_data(f"{charger_usernamme}: {amount_to_charge}{charger_id}{qr_transaction_number}")
-        qr.add_data(f"{charger_id}:{amount_to_charge}:{qr_transaction_number}")
+        qr.add_data(f"{charger_id}:{amount_to_charge}:{qr_id}")
         qr_img = qr.make_image(back_color="white", fill_color='black')
 
         # We create a io.BytesIO buffer to store the QR code image in memory without saving it as a file.
@@ -617,6 +636,7 @@ def scan_payment_qr(message):
 
 qr_charger_id_dict = {}
 qr_amount_to_charge_dict = {}
+qr_id_dict = {}
 
 
 def qr_code_content_handler(qr_code_content_message):
@@ -624,24 +644,40 @@ def qr_code_content_handler(qr_code_content_message):
     qr_code_content = qr_code_content_message.text
     qr_code_content = qr_code_content.split(":")
 
+    # an error might occur if the user scans a qr code not from textpay since the format would be different. For instance, the qr
+    # scanned could be Adebola is a fine boy. In this case, int(qr_code_content[0]) would return an error. so handle this later
     charger_id = int(qr_code_content[0])
     qr_charger_id_dict[qr_code_content_message.from_user.id] = charger_id
 
     amount_to_charge = Decimal(qr_code_content[1])
     qr_amount_to_charge_dict[qr_code_content_message.from_user.id] = amount_to_charge
 
-    qr_transaction_number = int(qr_code_content[2])
+    qr_id = int(qr_code_content[2])
+    qr_id_dict[qr_code_content_message.from_user.id] = qr_id
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    select_charger_id_from_users_wallet_table = "SELECT qr_transaction_number, first_name, last_name from users_wallet where user_id = %s"
-    cursor.execute(select_charger_id_from_users_wallet_table, (charger_id, ))
+    select_qr_info_from_qr_info_table_sql = "SELECT qr_id, qr_used from qr_info WHERE user_id = %s AND qr_id = %s"
+    select_charger_info_from_users_wallet_table_sql = "SELECT first_name, last_name from users_wallet where user_id = %s"
+    # an error would occur if a wrong user_id is given name_first, name_last = result
+# TypeError: cannot unpack non-iterable NoneType object
+# to see this error, just input a correct qr but just change the first number in the generated code
+    cursor.execute(
+        select_charger_info_from_users_wallet_table_sql, (charger_id, ))
     result = cursor.fetchone()
-    retrieved_transaction_number, name_first, name_last = result
-    if retrieved_transaction_number == qr_transaction_number:
+    name_first, name_last = result
+
+    cursor.execute(select_qr_info_from_qr_info_table_sql, (charger_id, qr_id))
+    result = cursor.fetchone()
+    retrieved_qr_id, retrieved_qr_used = result
+
+    if retrieved_qr_id == qr_id and retrieved_qr_used == False:
         bot.send_message(qr_code_content_message.chat.id,
                          f"Are you sure you want to send ₦{amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
+    elif retrieved_qr_id == qr_id and retrieved_qr_used == True:
+        bot.send_message(qr_code_content_message.chat.id,
+                         "This QR code has already been used. Ask the person to generate a new one 😊")
     else:
         bot.send_message(qr_code_content_message.chat.id,
                          "The QR code that was scanned is not from TextPay, that person that initiated this transaction might be fraudulent.")
@@ -685,6 +721,7 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
     chargee_id = entered_password_message.from_user.id
     charger_id = qr_charger_id_dict[chargee_id]
     amount_to_charge = qr_amount_to_charge_dict[chargee_id]
+    qr_id = qr_id_dict[chargee_id]
 
     entered_password = entered_password_message.text
 
@@ -705,6 +742,9 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
     chargee_username, chargee_first_name, chargee_last_name, chargee_wallet_balance = cursor.fetchone()
 
     if entered_password == user_password:
+        update_qr_used_to_true_for_the_scanned_qr_code_sql = "UPDATE qr_info SET qr_used = %s WHERE user_id = %s AND qr_id = %s"
+        cursor.execute(
+            update_qr_used_to_true_for_the_scanned_qr_code_sql, (True, charger_id, qr_id))
         if chargee_wallet_balance >= amount_to_charge:
             cursor.execute(
                 update_chargers_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, charger_id))
@@ -722,14 +762,14 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
             # checking if the charger has a username else use their firstname and lastname
             if charger_username:
                 bot.send_message(entered_password_message.from_user.id,
-                                 f"Great!!! You have texted ₦{amount_to_charge} to @{charger_username}. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+                                 f"Great!!! You have texted ₦{amount_to_charge} to @{charger_username} through qr. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
                 bot.send_message(
-                    chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+                    chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet through the qr. You now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet through the qr. You now have ₦{charger_wallet_balance + amount_to_charge}")
             else:
                 bot.send_message(entered_password_message.from_user.id,
-                                 f"Great!!! You have texted ₦{amount_to_charge} to {charger_first_name} {charger_last_name} . You have ₦{chargee_wallet_balance - amount_to_charge} left.")
+                                 f"Great!!! You have texted ₦{amount_to_charge} to {charger_first_name} {charger_last_name} through qr. You have ₦{chargee_wallet_balance - amount_to_charge} left.")
                 bot.send_message(
-                    chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet you now have ₦{charger_wallet_balance + amount_to_charge}")
+                    chat_id=charger_id, text=f"@{chargee_username} just texted ₦{amount_to_charge} to your wallet through the qr. You now have ₦{charger_wallet_balance + amount_to_charge}" if chargee_username else f"{chargee_first_name} {chargee_last_name} just texted ₦{amount_to_charge} to your wallet through the qr. You now have ₦{charger_wallet_balance + amount_to_charge}")
         elif chargee_wallet_balance < amount_to_charge:
             bot.send_message(
                 chargee_id, f"You don't have up to ₦{amount_to_charge} in your wallet.")
