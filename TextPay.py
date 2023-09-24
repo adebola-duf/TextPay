@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telebot.storage import StateMemoryStorage
+from telebot.handler_backends import State, StatesGroup  # states
+from telebot import custom_filters
 from pathlib import Path
 import pandas as pd
 import psycopg2
@@ -13,6 +16,9 @@ import random
 import qrcode
 import time
 
+# states storage
+state_storage = StateMemoryStorage()  # you can init here another storage
+
 
 load_dotenv(".env")
 token = os.getenv("TEXT_PAY_BOT_TOKEN")
@@ -22,14 +28,36 @@ db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_EXTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
-bot = telebot.TeleBot(token, parse_mode=None)
-
+bot = telebot.TeleBot(token, state_storage=state_storage)
 
 connection_params = {"database": db,
                      "user": db_username,
                      "host": db_host,
                      "password": db_password,
                      "port": db_port}
+# States group.
+
+
+class MyStates(StatesGroup):
+    # Each attribute in the class represents a different state: first_name, last_name
+    first_name = State()
+    last_name = State()
+    password = State()
+    registration_info_given = State()
+    # i know some of these variable names are wack but like i've got no better thing
+    user_wanna_delete = State()
+    delete_confirmation = State()
+    password_for_delete = State()
+    password_for_text_to_other = State()
+    receiver_id_for_text_to_other = State()
+    actual_send_to_other_state = State()
+    # this is the state for when you want to create a qr
+    enter_amount_to_charge_for_create_qr_state = State()
+
+    # this is the state for when you want to scan a qr
+    qr_scanned = State()
+    qr_text_confirmation = State()
+    password_for_qr_scan = State()
 
 
 def delete_confirmation_markup():
@@ -40,12 +68,12 @@ def delete_confirmation_markup():
     return markup
 
 
-# def name_confirmation_markup():
-#     markup = InlineKeyboardMarkup()
-#     markup.row_width = 2
-#     markup.add(InlineKeyboardButton("Yes", callback_data="cb_name_confirmation_yes"),
-#                InlineKeyboardButton("No", callback_data="cb_name_confirmation_no"))
-#     return markup
+def name_confirmation_markup():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(InlineKeyboardButton("Yes ✅", callback_data="cb_name_confirmation_yes"),
+               InlineKeyboardButton("No 🚫", callback_data="cb_name_confirmation_no"))
+    return markup
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -67,8 +95,10 @@ This is a list of the commands:
 /scan_payment_qr - To scan a QR code for making payment.
                 
 /transaction_history - To see your last 10 transaction history.
+                     
+/cancel - To cancel any thing you are doing.
                 
-/purchase_history - To check your purchase history.
+/purchase_history - To check your purchase history.         
                 
 /delete - To Delete your wallet. We are supposed to refund the money but I haven't implemented that yet.
                 
@@ -90,6 +120,8 @@ This is a list of the commands:
 /scan_payment_qr - To scan a QR code for making payment.
                      
 /transaction_history - To see your last 10 transaction history.
+                     
+/cancel - To cancel any thing you are doing.
                 
 /purchase_history - To check your purchase history.
                 
@@ -131,74 +163,103 @@ def xontinue(message):
     result = cursor.fetchone()
     if result:
         return
-    user_first_name_message = bot.send_message(
+    bot.send_message(
         message.from_user.id, "Please enter your first name.")
-    bot.register_next_step_handler(
-        user_first_name_message, first_name, user_id)
+    bot.set_state(user_id=user_id, state=MyStates.first_name,
+                  chat_id=message.chat.id)
 
     cursor.close()
     connection.close()
 
 
-def first_name(user_first_name_message, user_id):
-    user_first_name = user_first_name_message.text
-    user_last_name_message = bot.send_message(
-        user_id, f"Nice name you have 😊. {user_first_name} please enter your last name.")
-    bot.register_next_step_handler(
-        user_last_name_message, last_name, user_first_name, user_id)
+@bot.message_handler(state="*", commands=['cancel'])
+def cancel(message):
+    bot.delete_state(user_id=message.from_user.id, chat_id=message.chat.id)
+    bot.reply_to(message, "cancelled.")
 
 
-def last_name(user_last_name_message, user_first_name, user_id):
-    user_last_name = user_last_name_message.text
-    user_password_message = bot.send_message(
-        user_id, "One more thing. Enter a password for transactions (and remember it!) 🔒 because your text will be deleted immediately after you enter it. If forgotten, 📞 support. 😊")
-    bot.register_next_step_handler(user_password_message, password, user_last_name,
-                                   user_first_name, user_id)
+@bot.message_handler(state=MyStates.first_name)
+def first_name(user_first_name_message):
+    user_id = user_first_name_message.from_user.id
+    with bot.retrieve_data(user_id=user_id, chat_id=user_first_name_message.chat.id) as user_data:
+        user_data['first_name'] = user_first_name_message.text
+        user_data["username"] = user_first_name_message.from_user.username
+    bot.set_state(user_id=user_id, state=MyStates.last_name,
+                  chat_id=user_first_name_message.chat.id)
+    bot.send_message(user_first_name_message.chat.id,
+                     f"Nice name you have 😊. {user_data['first_name']} please enter your last name.")
 
 
-def password(user_password_message, user_last_name, user_first_name, user_id):
+@bot.message_handler(state=MyStates.last_name)
+def last_name(user_last_name_message):
+    with bot.retrieve_data(user_last_name_message.from_user.id) as user_data:
+        user_data["last_name"] = user_last_name_message.text
+    bot.set_state(user_id=user_last_name_message.from_user.id,
+                  state=MyStates.password, chat_id=user_last_name_message.chat.id)
+    bot.send_message(user_last_name_message.chat.id,
+                     f"One more thing. Enter a password for transactions (and remember it!) 🔒 because your text will be deleted immediately after you enter it. If forgotten, 📞 support. 😊")
+
+
+@bot.message_handler(state=MyStates.password)
+def password(user_password_message):
+    with bot.retrieve_data(user_password_message.from_user.id, user_password_message.chat.id) as user_data:
+        user_data["password"] = user_password_message.text
     bot.delete_message(user_password_message.chat.id,
-                       user_password_message.message_id)
-    user_password = user_password_message.text
+                       message_id=user_password_message.message_id)
+    bot.set_state(user_password_message.from_user.id, state=MyStates.registration_info_given,
+                  chat_id=user_password_message.chat.id)
+    bot.send_message(user_password_message.chat.id,
+                     f"Just to confirm, your name is {user_data['first_name']} {user_data['last_name']} and your password is {'*' * len(user_data['password'])}", reply_markup=name_confirmation_markup())
+
+# this message handler is for when we ask the user if they are sure that the infor they provided is correct. If when we ask them, they don't
+# click the button and they go and be typing instead of clicking yes or no, we just keep asking them.
+
+
+@bot.message_handler(state=MyStates.registration_info_given)
+def confirmation_message(message):
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as user_data:
+        user_first_name, user_last_name, user_password = user_data[
+            'first_name'], user_data["last_name"], user_data["password"]
+    bot.send_message(message.chat.id,
+                     f"Just to confirm, your name is {user_first_name} {user_last_name} and your password is {'*' * len(user_password)}", reply_markup=name_confirmation_markup())
+
+
+@bot.callback_query_handler(state=[MyStates.registration_info_given], func=lambda call: call.data.startswith("cb_name"))
+def callback_query(call):
+    user_id = call.from_user.id
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
+    insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username, transaction_password) VALUES (%s, %s, %s, %s, %s, %s, %s)"""
 
-    insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username, transaction_password)
-    VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+    if call.data == "cb_name_confirmation_yes":
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
-    current_datetime = datetime.datetime.now()
-    sql_current_datetime_format = current_datetime.strftime(
-        "%Y-%m-%d %H:%M:%S")
-    wallet_balance = 0
-    user_name = user_password_message.from_user.username
-    cursor.execute(insert_sql, (user_id, user_first_name,
-                   user_last_name, sql_current_datetime_format, wallet_balance, user_name, user_password))
-    connection.commit()
+        current_datetime = datetime.datetime.now()
+        sql_current_datetime_format = current_datetime.strftime(
+            "%Y-%m-%d %H:%M:%S")
+        wallet_balance = 0
+
+        with bot.retrieve_data(user_id=user_id, chat_id=call.message.chat.id) as user_data:
+            user_first_name, user_last_name, user_password, username = user_data[
+                'first_name'],  user_data['last_name'], user_data['password'], user_data["username"]
+        cursor.execute(insert_sql, (user_id, user_first_name, user_last_name,
+                       sql_current_datetime_format, wallet_balance, username, user_password))
+        connection.commit()
+        bot.send_message(
+            chat_id=call.message.chat.id, text=f"{user_first_name} {user_last_name}, your wallet has been created 👍.")
+        bot.delete_state(user_id=user_id, chat_id=call.message.chat.id)
+
+    elif call.data == "cb_name_confirmation_no":
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        bot.reply_to(
+            call.message, "Ok we are going to start over 😞. Please enter your first name.")
+        bot.set_state(user_id=user_id, state=MyStates.first_name,
+                      chat_id=call.message.chat.id)
+
     cursor.close()
     connection.close()
-    bot.send_message(user_id,
-                     f"{user_first_name} {user_last_name}, your wallet has been created 👍.")
-# def last_name(user_last_name_message, user_first_name):
-#     user_last_name = user_last_name_message.text
-#     bot.send_message(user_last_name_message.from_user.id, f"Just to confirm, you name is {user_first_name} {user_last_name}", reply_markup=name_confirmation_markup)
-
-# @bot.callback_query_handler(func=lambda call: call.data.startswith("cb_name"))
-# def callback_query(call):
-#     connection = psycopg2.connect(**connection_params)
-#     cursor = connection.cursor()
-
-#     if call.data == "cb_name_confirmation_yes":
-#         bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-#         bot.reply_to(call.message, "Your wallet has been created.")
-
-#     elif call.data == "cb_name_confirmation_no":
-#         bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-#         bot.reply_to(call.message, "Great!!! You still have your wallet.")
-
-#     cursor.close()
-#     connection.close()
 
 
 @bot.message_handler(commands=['wallet_balance'])
@@ -260,16 +321,27 @@ def delete(message):
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    user_id = message.from_user.id
+    u_id = message.from_user.id
+    c_id = message.chat.id
 
-    select_user_id_from_user_wallet_table_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
+    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password FROM users_wallet WHERE user_id = %s;"
 
-    cursor.execute(select_user_id_from_user_wallet_table_sql, (user_id,))
+    cursor.execute(
+        select_transaction_password_from_user_wallet_table_sql, (u_id, ))
     result = cursor.fetchone()
 
     if result:
+        user_password = result[0]
+        bot.set_state(
+            user_id=u_id, state=MyStates.user_wanna_delete, chat_id=c_id)
+        with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+            user_data["transaction_password"] = user_password
+            user_data["no_trials_left"] = 5
         bot.reply_to(
             message, f"Are you sure you want to delete your wallet?", reply_markup=delete_confirmation_markup())
+        bot.set_state(user_id=u_id, chat_id=c_id,
+                      state=MyStates.delete_confirmation)
+
     else:
         bot.reply_to(
             message, "You can't delete a wallet since you don't have one yet. To create a wallet click /create_wallet.")
@@ -277,63 +349,76 @@ def delete(message):
     cursor.close()
     connection.close()
 
+# if we ask the user if they want to actually delete or not and rather than click a button, they enter a message again, then we prompt them with the same
+# message annd buttons
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("cb_delete"))
+
+@bot.message_handler(state=MyStates.delete_confirmation)
+def delete_confirmation(message):
+    bot.reply_to(
+        message, f"Are you sure you want to delete your wallet?", reply_markup=delete_confirmation_markup())
+
+
+@bot.callback_query_handler(state=MyStates.delete_confirmation, func=lambda call: call.data.startswith("cb_delete"))
 def callback_query(call):
-    connection = psycopg2.connect(**connection_params)
-    cursor = connection.cursor()
-
     user_id = call.from_user.id
-
-    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password FROM users_wallet WHERE user_id = %s"
 
     if call.data == "cb_delete_confirmation_yes":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        cursor.execute(
-            select_transaction_password_from_user_wallet_table_sql, (user_id,))
-        user_password = cursor.fetchone()[0]
 
-        entered_password_message = bot.reply_to(
+        bot.reply_to(
             call.message, "Please enter your password.")
 
-        bot.register_next_step_handler(
-            entered_password_message, authenticate_password_for_delete, user_password, call)
-
-        cursor.close()
-        connection.close()
+        bot.set_state(user_id=user_id, state=MyStates.password_for_delete,
+                      chat_id=call.message.chat.id)
 
     elif call.data == "cb_delete_confirmation_no":
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         bot.reply_to(call.message, "Great!!! You still have your wallet.")
-
-    cursor.close()
-    connection.close()
+        bot.delete_state(user_id, call.message.chat.id)
 
 
-def authenticate_password_for_delete(entered_password_message, user_password, call):
-    connection = psycopg2.connect(**connection_params)
-    cursor = connection.cursor()
+@bot.message_handler(state=MyStates.password_for_delete)
+def authenticate_password_for_delete(entered_password_message):
 
     bot.delete_message(entered_password_message.chat.id,
                        entered_password_message.message_id)
     entered_password = entered_password_message.text
-    user_id = entered_password_message.from_user.id
+    u_id = entered_password_message.from_user.id
+    c_id = entered_password_message.chat.id
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_password = user_data["transaction_password"]
 
     delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
-    delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
     delete_user_from_qr_info_table_sql = "DELETE FROM qr_info WHERE user_id = %s;"
+    delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
 
     if entered_password == user_password:
-        cursor.execute(delete_user_from_transactions_table_sql, (user_id,))
-        cursor.execute(delete_user_from_qr_info_table_sql, (user_id,))
-        cursor.execute(delete_user_from_user_wallet_table_sql, (user_id,))
-        bot.reply_to(call.message, "Your wallet has been deleted.😞😞")
+        connection = psycopg2.connect(**connection_params)
+        cursor = connection.cursor()
+        cursor.execute(delete_user_from_transactions_table_sql, (u_id,))
+        cursor.execute(delete_user_from_qr_info_table_sql, (u_id,))
+        cursor.execute(delete_user_from_user_wallet_table_sql, (u_id,))
+        bot.send_message(entered_password_message.chat.id,
+                         "Your wallet has been deleted.😞😞")
         connection.commit()
+        cursor.close()
+        connection.close()
+        bot.delete_state(user_id=u_id, chat_id=c_id)
+        return
     else:
-        bot.send_message(entered_password_message.from_user.id,
-                         "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
+        user_data["no_trials_left"] -= 1
+        no_trials_left = user_data["no_trials_left"]
+        if no_trials_left > 0:
+            bot.send_message(
+                c_id, f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trials or you can click /cancel to cancel" if no_trials_left > 1 else f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trial  or you can click /cancel to cancel")
+            return
+        else:
+            bot.send_message(
+                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+    bot.delete_state(user_id=u_id, chat_id=c_id)
 
 
 @bot.message_handler(commands=['support'])
@@ -353,14 +438,16 @@ def initiate_send_to_other(message):
 
     cursor.execute(select_transaction_password_from_user_wallet_table_sql,
                    (sender_user_id,))
-    user_password = cursor.fetchone()[0]
+    result = cursor.fetchone()
 
-    if user_password:
-        entered_password_message = bot.reply_to(
-            message, "Please enter your password.")
-
-        bot.register_next_step_handler(
-            entered_password_message, authenticate_password_for_text_to_other_transactions, user_password)
+    if result:
+        user_password = result[0]
+        bot.reply_to(message, "Please enter your password.")
+        bot.set_state(user_id=sender_user_id,
+                      state=MyStates.password_for_text_to_other, chat_id=message.chat.id)
+        with bot.retrieve_data(user_id=sender_user_id, chat_id=message.chat.id) as user_data:
+            user_data['user_transaction_password'] = user_password
+            user_data["no_trials_left"] = 5
     else:
         bot.reply_to(
             message, "You can't text ₦₦ to another user since you don't have a wallet with us. To create a wallet click /create_wallet")
@@ -369,25 +456,44 @@ def initiate_send_to_other(message):
     connection.close()
 
 
-def authenticate_password_for_text_to_other_transactions(entered_password_message, user_password):
-    bot.delete_message(entered_password_message.chat.id,
-                       entered_password_message.message_id)
+@bot.message_handler(state=MyStates.password_for_text_to_other)
+def authenticate_password_for_text_to_other_transactions(entered_password_message):
+    u_id = entered_password_message.from_user.id
+    c_id = entered_password_message.from_user.id
+
+    bot.delete_message(
+        chat_id=c_id, message_id=entered_password_message.message_id)
     entered_password = entered_password_message.text
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_password = user_data['user_transaction_password']
+
     if entered_password == user_password:
-        bot.send_message(entered_password_message.from_user.id,
-                         "Password is correct")
-        receiver_user_id_or_username_message = bot.send_message(
-            entered_password_message.from_user.id, f'Enter the user id or the username of the person you want to text ₦₦ to.')
-        bot.register_next_step_handler(
-            receiver_user_id_or_username_message, validate_receiver_id)
+        bot.send_message(c_id, "Password is correct")
+        bot.send_message(
+            c_id, f'Enter the user id or the username of the person you want to text ₦₦ to.')
+        bot.set_state(
+            user_id=u_id, state=MyStates.receiver_id_for_text_to_other, chat_id=c_id)
+        return
     else:
-        bot.send_message(entered_password_message.from_user.id,
-                         "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
+        user_data["no_trials_left"] -= 1
+        no_trials_left = user_data["no_trials_left"]
+        if no_trials_left > 0:
+            bot.send_message(
+                c_id, f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trials or you can click /cancel to cancel" if no_trials_left > 1 else f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trial  or you can click /cancel to cancel")
+            return
+        else:
+            bot.send_message(
+                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+    bot.delete_state(user_id=u_id, chat_id=c_id)
 
 
+@bot.message_handler(state=MyStates.receiver_id_for_text_to_other)
 def validate_receiver_id(receiver_user_id_or_username_message):
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
+
+    u_id = receiver_user_id_or_username_message.from_user.id
+    c_id = receiver_user_id_or_username_message.chat.id
     is_receiver_id = True
 
     # This is just like if the message entered by the user is all numbers then that's a user id else its a username.
@@ -398,7 +504,7 @@ def validate_receiver_id(receiver_user_id_or_username_message):
             receiver_user_id_or_username_message.text)
         if receiver_user_id_or_username == receiver_user_id_or_username_message.from_user.id:
             bot.reply_to(receiver_user_id_or_username_message,
-                         "You can't text money to yourself ya big dummy 🤣")
+                         "You can't text money to yourself ya big dummy 🤣. You can try again or click /cancel to cancel.")
             return
         else:
             select_receiver_id_from_user_wallet_table_sql = "SELECT user_id, username, first_name, last_name, wallet_balance FROM users_wallet WHERE user_id = %s;"
@@ -413,8 +519,9 @@ def validate_receiver_id(receiver_user_id_or_username_message):
             receiver_user_id_or_username_message.text)
         if receiver_user_id_or_username == receiver_user_id_or_username_message.from_user.username:
             bot.reply_to(receiver_user_id_or_username_message,
-                         "You can't text money to yourself ya big dummy 🤣")
+                         "You can't text money to yourself ya big dummy 🤣. You can try again or click /cancel to cancel.")
             return
+
         else:
             select_receiver_username_from_user_wallet_table_sql = "SELECT user_id, username, first_name, last_name, wallet_balance FROM users_wallet WHERE username = %s;"
             cursor.execute(select_receiver_username_from_user_wallet_table_sql,
@@ -423,46 +530,65 @@ def validate_receiver_id(receiver_user_id_or_username_message):
 
     if result:
         receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance = result
-        amount_to_send_message = bot.reply_to(
-            receiver_user_id_or_username_message, f"How much do you want to text to {receiver_first_name} {receiver_last_name}?" if is_receiver_id else f"How much do you want to text to @{receiver_user_id_or_username}?")
-        bot.register_next_step_handler(
-            amount_to_send_message, actual_send_to_other, receiver_user_id_or_username, is_receiver_id, receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance)
+        with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+            user_data["receiver_id"] = receiver_id
+            user_data["receiver_first_name"] = receiver_first_name
+            user_data["receiver_last_name"] = receiver_last_name
+            user_data["receiver_wallet_balance"] = receiver_wallet_balance
+            user_data["receiver_username"] = receiver_username
+            user_data["is_receiver_id"] = is_receiver_id
+
+        bot.reply_to(receiver_user_id_or_username_message,
+                     f"How much do you want to text to {receiver_first_name} {receiver_last_name}?" if is_receiver_id else f"How much do you want to text to @{receiver_user_id_or_username}?")
+        bot.set_state(
+            user_id=u_id, state=MyStates.actual_send_to_other_state, chat_id=c_id)
     else:
         bot.reply_to(
-            receiver_user_id_or_username_message, f"user_id {receiver_user_id_or_username} doesn't have a wallet. Make sure you entered the correct thing." if is_receiver_id else f"@{receiver_user_id_or_username} doesn't have a wallet. Make sure you entered the correct thing.")
+            receiver_user_id_or_username_message, f"user id {receiver_user_id_or_username} doesn't have a wallet. Make sure you entered the correct thing. You can try again or click /cancel to cancel." if is_receiver_id else f"@{receiver_user_id_or_username} doesn't have a wallet. Make sure you entered the correct thing. You can try again or click /cancel to cancel.")
 
     cursor.close()
     connection.close()
 
 
-def actual_send_to_other(amount_to_send_message, receiver_user_id_or_username, is_receiver_id, receiver_id, receiver_username, receiver_first_name, receiver_last_name, receiver_wallet_balance):
+@bot.message_handler(state=MyStates.actual_send_to_other_state)
+def actual_send_to_other(amount_to_send_message):
     try:
         amount_to_send = Decimal(amount_to_send_message.text)
     except InvalidOperation:
         bot.send_message(amount_to_send_message.chat.id,
-                         "You entered an invalid amount. 🤔")
+                         "You entered an invalid amount. 🤔. This time please enter a correct amount. #numbers only or you can click /cancel to cancel.")
         return
 
     sender_id = amount_to_send_message.from_user.id
+    sender_user_name = amount_to_send_message.from_user.username
+    c_id = amount_to_send_message.chat.id
+
+    with bot.retrieve_data(user_id=sender_id, chat_id=c_id) as user_data:
+        receiver_id = user_data["receiver_id"]
+        receiver_first_name = user_data["receiver_first_name"]
+        receiver_last_name = user_data["receiver_last_name"]
+        receiver_wallet_balance = user_data["receiver_wallet_balance"]
+        receiver_username = user_data["receiver_username"]
+        is_receiver_id = user_data["is_receiver_id"]
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    sender_user_name = amount_to_send_message.from_user.username
     # if the person doesn't have a username, I'm going to use the first name and last name they inputted when registering.
     select_sender_firstname_lastname_from_user_wallet_table_sql = "SELECT first_name, last_name, wallet_balance FROM users_wallet WHERE user_id = %s;"
     cursor.execute(select_sender_firstname_lastname_from_user_wallet_table_sql,
                    (amount_to_send_message.from_user.id, ))
-    result = cursor.fetchone()
-    sender_first_name, sender_last_name, sender_wallet_balance = result
+    sender_first_name, sender_last_name, sender_wallet_balance = cursor.fetchone()
 
     if amount_to_send > 0 and sender_wallet_balance >= amount_to_send:
 
         update_sender_wallet_balance_from_user_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s;"
         cursor.execute(update_sender_wallet_balance_from_user_wallet_table_sql,
                        (amount_to_send, sender_id))
+
         bot.reply_to(amount_to_send_message,
-                     f"You have texted ₦{amount_to_send} to {receiver_first_name} {receiver_last_name}. You have ₦{sender_wallet_balance - amount_to_send} left." if is_receiver_id else f"You have texted ₦{amount_to_send} to @{receiver_user_id_or_username}. You have ₦{sender_wallet_balance - amount_to_send} left.")
+                     f"You have texted ₦{amount_to_send} to {receiver_first_name} {receiver_last_name}. You have ₦{sender_wallet_balance - amount_to_send} left." if is_receiver_id else f"You have texted ₦{amount_to_send} to @{receiver_username}. You have ₦{sender_wallet_balance - amount_to_send} left.")
+
         current_datetime = datetime.datetime.now()
 
         update_receiver_wallet_balance_in_user_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
@@ -489,17 +615,20 @@ def actual_send_to_other(amount_to_send_message, receiver_user_id_or_username, i
     elif sender_wallet_balance < amount_to_send:
         bot.reply_to(amount_to_send_message,
                      f"You don't have up to ₦{amount_to_send} in your wallet.")
+
+    elif amount_to_send == 0:
+        bot.reply_to(amount_to_send_message,
+                     "You can't text nothing 😂")
     else:
         bot.reply_to(amount_to_send_message,
                      "You can't text someone a -ve amount. Math gee 😂")
+
+    bot.delete_state(sender_id, chat_id=c_id)
 
     # check chatgpt for an option where if any of the add sql or deduct sql fails, we don't do anything in the database.
     connection.commit()
     cursor.close()
     connection.close()
-
-# for now, the transaction history only shows you the history of you sending and not you receiving
-# later i'm goin to make it also show where you received.
 
 
 @bot.message_handler(commands=['transaction_history'])
@@ -544,10 +673,24 @@ def transaction_history(message):
 
 @bot.message_handler(commands=['create_payment_qr'])
 def create_payment_qr(message):
-    amount_to_charge_message = bot.reply_to(
-        message, "How much do you want to charge?")
-    bot.register_next_step_handler(
-        amount_to_charge_message, qr_amount_processor)
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+    # let's check if the user has a wallet with us first
+    select_user_id_from_users_wallet_table_sql = "SELECT user_id from users_wallet where user_id = %s"
+    cursor.execute(select_user_id_from_users_wallet_table_sql, (u_id, ))
+    result = cursor.fetchone()
+
+    if result:
+        bot.reply_to(message, "How much do you want to charge?")
+        bot.set_state(
+            user_id=u_id, state=MyStates.enter_amount_to_charge_for_create_qr_state, chat_id=c_id)
+    else:
+        bot.reply_to(
+            message, "You don't have a wallet with us. To create a wallet click /create_wallet")
+    cursor.close()
+    connection.close()
 
 
 def generate_qr_id(cursor, charger_id):
@@ -565,27 +708,22 @@ def generate_qr_id(cursor, charger_id):
             return random_number  # Return the unique random number
 
 
+@bot.message_handler(state=MyStates.enter_amount_to_charge_for_create_qr_state)
 def qr_amount_processor(amount_to_charge_message):
     try:
         amount_to_charge = Decimal(amount_to_charge_message.text)
     except InvalidOperation:
         bot.send_message(amount_to_charge_message.chat.id,
-                         "You entered an invalid amount. 🤔")
+                         "You entered an invalid amount. 🤔. This time please enter a correct amount. #numbers only or you can click /cancel to cancel.")
         return
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
     charger_id = amount_to_charge_message.from_user.id
-    charger_usernamme = amount_to_charge_message.from_user.username
     qr_id = generate_qr_id(cursor, charger_id)
 
-    select_charger_id_from_users_wallet_table_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s"
-    cursor.execute(
-        select_charger_id_from_users_wallet_table_sql, (charger_id, ))
-    charger_id_from_users_wallet_table = cursor.fetchone()
-
-    if charger_id_from_users_wallet_table and amount_to_charge > 0:
+    if amount_to_charge > 0:
         insert_qr_info_into_qr_info_table_sql = "INSERT INTO qr_info (qr_id, user_id, qr_used) VALUES (%s, %s, %s)"
         cursor.execute(insert_qr_info_into_qr_info_table_sql,
                        (qr_id, charger_id, False))
@@ -608,16 +746,14 @@ def qr_amount_processor(amount_to_charge_message):
 
         # Send the QR code image as a photo message
         bot.send_photo(amount_to_charge_message.chat.id, photo=buffer)
-    elif charger_id_from_users_wallet_table and amount_to_charge == 0:
+        bot.delete_state(user_id=amount_to_charge_message.from_user.id,
+                         chat_id=amount_to_charge_message.chat.id)
+    elif amount_to_charge == 0:
         bot.send_message(amount_to_charge_message.chat.id,
                          "You cannot charge someone a ₦0. Trust 😂")
-    elif charger_id_from_users_wallet_table and amount_to_charge < 0:
+    else:
         bot.send_message(amount_to_charge_message.chat.id,
                          "You cannot charge someone a -ve amount. Math gee 😂")
-    else:
-        # User does not exist
-        bot.send_message(amount_to_charge_message.chat.id,
-                         "Dude or Lady create a wallet first.")
 
     cursor.close()
     connection.close()
@@ -633,30 +769,46 @@ def qr_send_to_charger_confirmation_markup():
     markup.add(confirm_button, decline_button)
     return markup
 
+# you need to handle the error where the user that created a qr has deleted their wallet. trying to retrieve the user's data would return None and indexing this would return an error
+# also when a user that hasn't created a wallet is trying to create a qr or scan a qr
+
 
 @bot.message_handler(commands=['scan_payment_qr'])
 def scan_payment_qr(message):
 
-    markup = InlineKeyboardMarkup()
-    qr_scanner_web_app = InlineKeyboardButton(
-        "Scan QR", web_app=WebAppInfo(url="https://qr-code-scanner-two.vercel.app/"))
-    markup.add(qr_scanner_web_app)
+    # Holy Spirit
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
+    # let's check if the user has a wallet with us first
+    select_user_id_from_users_wallet_table_sql = "SELECT user_id from users_wallet where user_id = %s"
+    cursor.execute(select_user_id_from_users_wallet_table_sql, (u_id, ))
+    result = cursor.fetchone()
 
-    bot.reply_to(message, "Make sure to copy the code generated.",
-                 reply_markup=markup)
-    time.sleep(2.5)
-    qr_code_content_message = bot.send_message(
-        message.chat.id, "Enter the code generated.")
-    bot.register_next_step_handler(
-        qr_code_content_message, qr_code_content_handler)
+    if result:
+        markup = InlineKeyboardMarkup()
+        qr_scanner_web_app = InlineKeyboardButton(
+            "Scan QR", web_app=WebAppInfo(url="https://qr-code-scanner-two.vercel.app/"))
+        markup.add(qr_scanner_web_app)
+
+        bot.reply_to(message, "Make sure to copy the code generated.",
+                     reply_markup=markup)
+        bot.send_message(
+            message.chat.id, "Enter the code generated.")
+        bot.set_state(user_id=u_id, state=MyStates.qr_scanned, chat_id=c_id)
+    else:
+        bot.reply_to(
+            message, "You don't have a wallet with us. To create a wallet click /create_wallet")
+
+    cursor.close()
+    connection.close()
 
 
-qr_charger_id_dict = {}
-qr_amount_to_charge_dict = {}
-qr_id_dict = {}
-
-
+@bot.message_handler(state=MyStates.qr_scanned)
 def qr_code_content_handler(qr_code_content_message):
+    u_id = qr_code_content_message.from_user.id
+    c_id = qr_code_content_message.chat.id
 
     qr_code_content = qr_code_content_message.text
     qr_code_content = qr_code_content.split(":")
@@ -667,103 +819,150 @@ def qr_code_content_handler(qr_code_content_message):
             qr_code_content[1]), int(qr_code_content[2])
     except (IndexError, ValueError, InvalidOperation):
         bot.send_message(qr_code_content_message.chat.id,
-                         "You scanned a wrong qr code. 😪")
+                         "You scanned a wrong qr code. 😪. You can try again or click /cancel to cancel.")
         return
-
-    qr_charger_id_dict[qr_code_content_message.from_user.id] = charger_id
-    qr_amount_to_charge_dict[qr_code_content_message.from_user.id] = amount_to_charge
-    qr_id_dict[qr_code_content_message.from_user.id] = qr_id
 
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
-    select_qr_info_from_qr_info_table_sql = "SELECT qr_id, qr_used from qr_info WHERE user_id = %s AND qr_id = %s"
+    # change the name of this user_id in the qr_info tabl to charger id
+    select_qr_info_from_qr_info_table_sql = "SELECT qr_used from qr_info WHERE user_id = %s AND qr_id = %s"
     select_charger_info_from_users_wallet_table_sql = "SELECT first_name, last_name from users_wallet where user_id = %s"
     # an error would occur if a wrong user_id is given name_first, name_last = result
-# TypeError: cannot unpack non-iterable NoneType object
-# to see this error, just input a correct qr but just change the first number in the generated code
+    # TypeError: cannot unpack non-iterable NoneType object
+    # to see this error, just input a correct qr but just change the first number in the generated code
     cursor.execute(
         select_charger_info_from_users_wallet_table_sql, (charger_id, ))
     result = cursor.fetchone()
-    name_first, name_last = result
+    # if the charger id exists
+    if result:
+        name_first, name_last = result
+
+    else:
+        bot.send_message(c_id, "This QR code is invalid.")
+        bot.delete_state(user_id=u_id, chat_id=c_id)
+        return
 
     cursor.execute(select_qr_info_from_qr_info_table_sql, (charger_id, qr_id))
     result = cursor.fetchone()
-    retrieved_qr_id, retrieved_qr_used = result
+    if result:
+        retrieved_qr_used = result[0]
+    else:
+        bot.send_message(
+            c_id, "The QR code that was scanned is not from TextPay. The person that initiated this transaction might be fraudulent. 👮🏾‍♂️")
+        bot.delete_state(user_id=u_id, chat_id=c_id)
+        return
 
-    if retrieved_qr_id == qr_id and retrieved_qr_used == False:
+    if retrieved_qr_used == False:
+        with bot.retrieve_data(u_id, c_id) as user_data:
+            user_data["charger_id"] = charger_id
+            user_data["amount_to_charge"] = amount_to_charge
+            user_data["qr_id"] = qr_id
+            user_data["no_trials_left"] = 5
+            user_data["charger_first_name"] = name_first
+            user_data["charger_last_name"] = name_last
+
         bot.send_message(qr_code_content_message.chat.id,
-                         f"Are you sure you want to send ₦{amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
-    elif retrieved_qr_id == qr_id and retrieved_qr_used == True:
-        bot.send_message(qr_code_content_message.chat.id,
-                         "This QR code has already been used. Ask the person to generate a new one 😊")
+                         f"Are you sure you want to text ₦{amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
+        bot.set_state(u_id, state=MyStates.qr_text_confirmation, chat_id=c_id)
     else:
         bot.send_message(qr_code_content_message.chat.id,
-                         "The QR code that was scanned is not from TextPay, that person that initiated this transaction might be fraudulent.")
+                         "This QR code has already been used. Ask the person to generate a new one 😊")
+        bot.delete_state(user_id=u_id, chat_id=c_id)
+
     cursor.close()
     connection.close()
 
+# this fucntion is for when we are asking if they want to confirm or decline the payment request but rather than click one of the 2 buttons, they type in something
+# so, in the case where they type in something, we want to just show the same buttons and the message the buttons are attached to.
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("qr_send_to"))
+
+@bot.message_handler(state=MyStates.qr_text_confirmation)
+def qr_text_confirmation(message):
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as user_data:
+        name_first = user_data["charger_first_name"]
+        name_last = user_data["charger_last_name"]
+        amount_to_charge = user_data["amount_to_charge"]
+
+    bot.send_message(message.chat.id,
+                     f"Are you sure you want to text ₦{amount_to_charge} to {name_first} {name_last}", reply_markup=qr_send_to_charger_confirmation_markup())
+
+
+@bot.callback_query_handler(state=MyStates.qr_text_confirmation, func=lambda call: call.data.startswith("qr_send_to"))
 def callback_query(call):
+    connection = psycopg2.connect(**connection_params)
+    cursor = connection.cursor()
 
+    select_user_password_from_users_wallet_table = "SELECT transaction_password FROM users_wallet WHERE user_id = %s"
+    cursor.execute(
+        select_user_password_from_users_wallet_table, (call.from_user.id, ))
+
+    # this is going to cause an error later when a user is trying to scan a qr and they don't have a wallet because cursor.fetchone() is going to return None and we'd be trying to index none which would return a TypeError
+    user_password = cursor.fetchone()[0]
+    cursor.close()
+    connection.close()
+    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as user_data:
+        user_data["transaction_password"] = user_password
+        charger_id = user_data["charger_id"]
     if call.data == "qr_send_to_charger_confirmed":
-        connection = psycopg2.connect(**connection_params)
-        cursor = connection.cursor()
 
-        select_user_password_from_users_wallet_table = "SELECT transaction_password FROM users_wallet WHERE user_id = %s"
-        cursor.execute(
-            select_user_password_from_users_wallet_table, (call.from_user.id, ))
-        user_password = cursor.fetchone()[0]
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
-        entered_pasword_message = bot.reply_to(
+        bot.reply_to(
             call.message, "Enter your password to complete the transaction.")
-        bot.register_next_step_handler(
-            entered_pasword_message, authenticate_password_for_qr_transactions, user_password)
+        bot.set_state(user_id=call.from_user.id,
+                      state=MyStates.password_for_qr_scan, chat_id=call.message.chat.id)
 
-    elif call.data == "qr_send_to_charger_declined":
+    else:
         bot.edit_message_reply_markup(
             chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         # i think i want this one to send a message to both parties involved in the transaction that it has been cancelled
-        bot.reply_to(call.message, "Transaction has been cancelled.")
-    cursor.close()
-    connection.close()
+        bot.reply_to(call.message, "Transaction has been declined.")
+        bot.send_message(
+            charger_id, f"@{call.from_user.username} just declined the transaction." if call.from_user.username else f"The other person just cancelled the transaction.")
+        bot.delete_state(user_id=call.from_user.id,
+                         chat_id=call.message.chat.id)
+
 
 # remember to include the part where the transactions table is updated
 
 
-def authenticate_password_for_qr_transactions(entered_password_message, user_password):
+@bot.message_handler(state=MyStates.password_for_qr_scan)
+def authenticate_password_for_qr_transactions(entered_password_message):
     bot.delete_message(entered_password_message.chat.id,
                        entered_password_message.message_id)
     chargee_id = entered_password_message.from_user.id
-    charger_id = qr_charger_id_dict[chargee_id]
-    amount_to_charge = qr_amount_to_charge_dict[chargee_id]
-    qr_id = qr_id_dict[chargee_id]
+    chat_id = entered_password_message.chat.id
 
+    with bot.retrieve_data(user_id=chargee_id, chat_id=chat_id) as user_data:
+        charger_id = user_data["charger_id"]
+        amount_to_charge = user_data["amount_to_charge"]
+        qr_id = user_data["qr_id"]
+        user_password = user_data["transaction_password"]
     entered_password = entered_password_message.text
 
-    connection = psycopg2.connect(**connection_params)
-    cursor = connection.cursor()
-
-    select_chargers_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
-    select_chargees_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
-
-    update_chargers_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s where user_id = %s"
-    update_chargees_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s where user_id = %s"
-
-    cursor.execute(
-        select_chargers_info_from_users_wallet_table_sql, (charger_id, ))
-    charger_username, charger_first_name, charger_last_name, charger_wallet_balance = cursor.fetchone()
-    cursor.execute(
-        select_chargees_info_from_users_wallet_table_sql, (chargee_id, ))
-    chargee_username, chargee_first_name, chargee_last_name, chargee_wallet_balance = cursor.fetchone()
-
     if entered_password == user_password:
+        # the sql stuffs
+        connection = psycopg2.connect(**connection_params)
+        cursor = connection.cursor()
+
+        select_chargers_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
+        select_chargees_info_from_users_wallet_table_sql = "SELECT username, first_name, last_name, wallet_balance from users_wallet WHERE user_id = %s"
+
+        update_chargers_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s where user_id = %s"
+        update_chargees_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s where user_id = %s"
+
+        cursor.execute(
+            select_chargers_info_from_users_wallet_table_sql, (charger_id, ))
+        charger_username, charger_first_name, charger_last_name, charger_wallet_balance = cursor.fetchone()
+        cursor.execute(
+            select_chargees_info_from_users_wallet_table_sql, (chargee_id, ))
+        chargee_username, chargee_first_name, chargee_last_name, chargee_wallet_balance = cursor.fetchone()
         update_qr_used_to_true_for_the_scanned_qr_code_sql = "UPDATE qr_info SET qr_used = %s WHERE user_id = %s AND qr_id = %s"
         cursor.execute(
             update_qr_used_to_true_for_the_scanned_qr_code_sql, (True, charger_id, qr_id))
+
         if chargee_wallet_balance >= amount_to_charge:
             cursor.execute(
                 update_chargers_wallet_balance_in_users_wallet_table_sql, (amount_to_charge, charger_id))
@@ -778,6 +977,10 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
             VALUES (DEFAULT, %s, %s, %s, %s)"""
             cursor.execute(insert_sql_into_transactions_table, (charger_id,
                            sql_current_datetime_format, amount_to_charge, chargee_id))
+
+            connection.commit()
+            cursor.close()
+            connection.close()
             # checking if the charger has a username else use their firstname and lastname
             if charger_username:
                 bot.send_message(entered_password_message.from_user.id,
@@ -796,16 +999,23 @@ def authenticate_password_for_qr_transactions(entered_password_message, user_pas
             bot.send_message(
                 chargee_id, "You can't text someone a -ve amount. Math gee 😂")
     else:
-        bot.send_message(entered_password_message.from_user.id,
-                         "You are sooo wrong. See your head like ole. Now you have to start over. 🤣😂")
-        bot.send_message()
+        user_data["no_trials_left"] -= 1
+        no_trials_left = user_data["no_trials_left"]
+        if no_trials_left > 0:
+            bot.send_message(
+                chat_id, f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trials or you can click /cancel to cancel" if no_trials_left > 1 else f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trial  or you can click /cancel to cancel")
+            return
+        else:
+            bot.send_message(
+                chat_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+    bot.delete_state(user_id=chargee_id, chat_id=chat_id)
 
-    connection.commit()
-    cursor.close()
-    connection.close()
 
+bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
+bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 
-bot.polling()
+bot.delete_webhook()
+bot.polling(timeout=40)
 
 
 # this qr stuff, i think something might go wrong if a user 1 creates a qr for user 2 to scan and pay

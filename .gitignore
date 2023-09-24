@@ -1,2 +1,5 @@
 .env
 env/
+qrcode generator.py
+alter.py
+custom_states.py
