@@ -24,7 +24,7 @@ token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_ITERNAL_HOST")
+db_host = os.getenv("DB_EXTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, state_storage=state_storage)
@@ -1044,6 +1044,8 @@ def get_my_id(message):
 
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
 bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
+
+bot.delete_webhook()
 
 bot.polling(timeout=40)
 
