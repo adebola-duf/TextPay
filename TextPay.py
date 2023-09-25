@@ -19,16 +19,16 @@ import time
 # states storage
 state_storage = StateMemoryStorage()  # you can init here another storage
 
-
 load_dotenv(".env")
 token = os.getenv("TEXT_PAY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_ITERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 bot = telebot.TeleBot(token, state_storage=state_storage)
+notify_bot = telebot.TeleBot(os.getenv("NOTIFY_BOT_TOKEN"))
 
 connection_params = {"database": db,
                      "user": db_username,
@@ -76,10 +76,12 @@ def name_confirmation_markup():
     return markup
 
 
+# you are meant to maybe create an account for this company so that like the charges would be going to that account so at the end of the maybe month, you'd know how much you actually have as revenue
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     if message.from_user.username:
-        bot.reply_to(message, f"""Hi, how are you doing {message.from_user.username}?
+        bot.reply_to(message, f"""Hello 👋 @{message.from_user.username}
 Welcome to TextPay. What would you like to do today?
 This is a list of the commands:
 /create_wallet - To create a wallet.
@@ -98,13 +100,15 @@ This is a list of the commands:
                      
 /cancel - To cancel any thing you are doing.
                 
-/purchase_history - To check your purchase history.         
+/purchase_history - To check your purchase history.    
+
+/get_my_id - To get your id.     
                 
-/delete - To Delete your wallet. We are supposed to refund the money but I haven't implemented that yet.
+/delete - To Delete your wallet. But there is a breaking fee of ₦100.
                 
 /support - For support information.""")
     else:
-        bot.reply_to(message, f"""Hi, how are you doing?
+        bot.reply_to(message, f"""Hello 👋
 Welcome to TextPay. What would you like to do today?
 This is a list of the commands:
 /create_wallet - To create a wallet.
@@ -124,6 +128,8 @@ This is a list of the commands:
 /cancel - To cancel any thing you are doing.
                 
 /purchase_history - To check your purchase history.
+                     
+/get_my_id - To get your id.
                 
 /delete - To Delete your wallet. We are supposed to refund the money but I haven't implemented that yet.
                 
@@ -211,10 +217,9 @@ def password(user_password_message):
     bot.send_message(user_password_message.chat.id,
                      f"Just to confirm, your name is {user_data['first_name']} {user_data['last_name']} and your password is {'*' * len(user_data['password'])}", reply_markup=name_confirmation_markup())
 
+
 # this message handler is for when we ask the user if they are sure that the infor they provided is correct. If when we ask them, they don't
 # click the button and they go and be typing instead of clicking yes or no, we just keep asking them.
-
-
 @bot.message_handler(state=MyStates.registration_info_given)
 def confirmation_message(message):
     with bot.retrieve_data(message.from_user.id, message.chat.id) as user_data:
@@ -232,8 +237,8 @@ def callback_query(call):
     insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username, transaction_password) VALUES (%s, %s, %s, %s, %s, %s, %s)"""
 
     if call.data == "cb_name_confirmation_yes":
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
         current_datetime = datetime.datetime.now()
         sql_current_datetime_format = current_datetime.strftime(
@@ -247,12 +252,12 @@ def callback_query(call):
                        sql_current_datetime_format, wallet_balance, username, user_password))
         connection.commit()
         bot.send_message(
-            chat_id=call.message.chat.id, text=f"{user_first_name} {user_last_name}, your wallet has been created 👍.")
+            chat_id=call.message.chat.id, text=f"{user_first_name} {user_last_name}, your wallet has been created 👍. To add money into your wallet click /make_payment")
         bot.delete_state(user_id=user_id, chat_id=call.message.chat.id)
 
     elif call.data == "cb_name_confirmation_no":
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         bot.reply_to(
             call.message, "Ok we are going to start over 😞. Please enter your first name.")
         bot.set_state(user_id=user_id, state=MyStates.first_name,
@@ -308,6 +313,8 @@ def make_payment(message):
         # the double underscore and backticks are markdown formatting.
         bot.reply_to(
             message, f"Please tap the button below\. Make sure to copy your user id it'd be needed during the process\. *Click this:* `{message.from_user.id}`", reply_markup=markup, parse_mode="MarkdownV2")
+        notify_bot.send_message(
+            5024452557, f"`{message.from_user.id}` might be about to make payments into their wallet or they are just testing it out\. Either way sha buckle up\. Open up gmail to receive paystack's mail\. We don't want to delay a potential long term customer\.", parse_mode="MarkdownV2")
     else:
         bot.reply_to(
             message, "You can't make payments since you don't have a wallet. To create a wallet click /create_wallet.")
@@ -324,19 +331,20 @@ def delete(message):
     u_id = message.from_user.id
     c_id = message.chat.id
 
-    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password FROM users_wallet WHERE user_id = %s;"
+    select_transaction_password_from_user_wallet_table_sql = "SELECT transaction_password, wallet_balance FROM users_wallet WHERE user_id = %s;"
 
     cursor.execute(
         select_transaction_password_from_user_wallet_table_sql, (u_id, ))
     result = cursor.fetchone()
 
     if result:
-        user_password = result[0]
+        user_password, user_wallet_balance = result
         bot.set_state(
             user_id=u_id, state=MyStates.user_wanna_delete, chat_id=c_id)
         with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
             user_data["transaction_password"] = user_password
             user_data["no_trials_left"] = 5
+            user_data["wallet_balance"] = user_wallet_balance
         bot.reply_to(
             message, f"Are you sure you want to delete your wallet?", reply_markup=delete_confirmation_markup())
         bot.set_state(user_id=u_id, chat_id=c_id,
@@ -349,10 +357,9 @@ def delete(message):
     cursor.close()
     connection.close()
 
+
 # if we ask the user if they want to actually delete or not and rather than click a button, they enter a message again, then we prompt them with the same
 # message annd buttons
-
-
 @bot.message_handler(state=MyStates.delete_confirmation)
 def delete_confirmation(message):
     bot.reply_to(
@@ -364,8 +371,8 @@ def callback_query(call):
     user_id = call.from_user.id
 
     if call.data == "cb_delete_confirmation_yes":
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
         bot.reply_to(
             call.message, "Please enter your password.")
@@ -374,8 +381,8 @@ def callback_query(call):
                       chat_id=call.message.chat.id)
 
     elif call.data == "cb_delete_confirmation_no":
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         bot.reply_to(call.message, "Great!!! You still have your wallet.")
         bot.delete_state(user_id, call.message.chat.id)
 
@@ -390,6 +397,7 @@ def authenticate_password_for_delete(entered_password_message):
     c_id = entered_password_message.chat.id
     with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
         user_password = user_data["transaction_password"]
+        user_wallet_balance = user_data["wallet_balance"]
 
     delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
     delete_user_from_qr_info_table_sql = "DELETE FROM qr_info WHERE user_id = %s;"
@@ -401,8 +409,22 @@ def authenticate_password_for_delete(entered_password_message):
         cursor.execute(delete_user_from_transactions_table_sql, (u_id,))
         cursor.execute(delete_user_from_qr_info_table_sql, (u_id,))
         cursor.execute(delete_user_from_user_wallet_table_sql, (u_id,))
-        bot.send_message(entered_password_message.chat.id,
-                         "Your wallet has been deleted.😞😞")
+
+        if user_wallet_balance > 100:
+            # also if we delete their wallet and they still have money in it, the money is also deleted.
+            # what if the person has 100.2
+            # also implement the part where they give you their account number
+            bot.send_message(entered_password_message.chat.id,
+                             f"Your wallet has been deleted.😞😞. You should receive {user_wallet_balance - 100} in about 10 minutes.")
+            # amount_to
+            amount_to_send = user_wallet_balance - 100
+            notify_bot.send_message(
+                5024452557, f"`{entered_password_message.from_user.id}` just deleted his/her account\. You are meant to send ₦`{amount_to_send}` to them\.", parse_mode="MarkdownV2")
+
+        else:
+            bot.send_message(entered_password_message.chat.id,
+                             f"Your wallet has been deleted.😞😞.")
+
         connection.commit()
         cursor.close()
         connection.close()
@@ -425,6 +447,8 @@ def authenticate_password_for_delete(entered_password_message):
 def support(message):
     bot.send_message(chat_id=message.from_user.id,
                      text="contact @adebola_duf or call +2349027929326")
+
+# we are meant to remove a certain percentage as charges for each transaction. sha depending on your pricing.
 
 
 @bot.message_handler(commands=['text_to_other'])
@@ -789,7 +813,7 @@ def scan_payment_qr(message):
     if result:
         markup = InlineKeyboardMarkup()
         qr_scanner_web_app = InlineKeyboardButton(
-            "Scan QR", web_app=WebAppInfo(url="https://qr-code-scanner-two.vercel.app/"))
+            "Scan QR", web_app=WebAppInfo(url="https://mboretto.github.io/easy-qr-scan-bot/"))
         markup.add(qr_scanner_web_app)
 
         bot.reply_to(message, "Make sure to copy the code generated.",
@@ -906,8 +930,9 @@ def callback_query(call):
         charger_id = user_data["charger_id"]
     if call.data == "qr_send_to_charger_confirmed":
 
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # i commented this block out because now that i have implemented states, the buttons only work when the user is in this state.
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
         bot.reply_to(
             call.message, "Enter your password to complete the transaction.")
@@ -915,8 +940,8 @@ def callback_query(call):
                       state=MyStates.password_for_qr_scan, chat_id=call.message.chat.id)
 
     else:
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        # bot.edit_message_reply_markup(
+        #     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
         # i think i want this one to send a message to both parties involved in the transaction that it has been cancelled
         bot.reply_to(call.message, "Transaction has been declined.")
         bot.send_message(
@@ -1011,10 +1036,15 @@ def authenticate_password_for_qr_transactions(entered_password_message):
     bot.delete_state(user_id=chargee_id, chat_id=chat_id)
 
 
+@bot.message_handler(commands=["get_my_id"])
+def get_my_id(message):
+    bot.reply_to(
+        message, f"Your ID is `{message.from_user.id}`", parse_mode="MarkdownV2")
+
+
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
 bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 
-bot.delete_webhook()
 bot.polling(timeout=40)
 
 
