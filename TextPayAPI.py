@@ -257,4 +257,4 @@ def transaction_history(authentication_token: str, user_id: int, number_transact
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
 
 
-# uvicorn.run(app=app, port=8000, host="127.0.0.1")
+uvicorn.run(app=app, host="0.0.0.0")
