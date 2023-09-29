@@ -1067,4 +1067,4 @@ bot.polling()
 # so i just thought of something. how to use the bot for transactions in offline mode. so when you are online, you generate a qr code that contains your user_id,
 # the amount and the id of the recipient so you can take your device around even when you are offline and you can pay for something by scanning the qr code.
 # so on the pos, it scans your qr code and then asks you to input your password. if the id on the qr and the password match, then it would print the paper
-# with the amount you want to pay.
+# with the amount you want to pay
