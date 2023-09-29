@@ -3,13 +3,15 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from fastapi import FastAPI
+import uvicorn
 
 load_dotenv(".env")
 token = os.getenv("ADMIN_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 admin_password = os.getenv("ADMIN_PASSWORD")
 
@@ -19,7 +21,25 @@ connection_params = {"database": db,
                      "password": db_password,
                      "port": db_port}
 
-bot = telebot.TeleBot(token, parse_mode=None)
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
+
+bot = telebot.TeleBot(token)
+
+app = FastAPI()
+
+
+@app.post(path=f"/{token}")
+def process_webhook_text_pay_bot(update: dict):
+    """
+    Process webhook calls
+    """
+    if update:
+        update = telebot.types.Update.de_json(update)
+        bot.process_new_updates([update])
+    else:
+        return
+
+
 userglobal_id = 1
 password = None
 updated_wallets = []
@@ -164,4 +184,12 @@ def done(message):
             message, "You are not authorised. Click /password for authentication.")
 
 
-bot.polling()
+bot.remove_webhook()
+
+# Set webhook
+bot.set_webhook(
+    url=WEBHOOK_URL_BASE + token
+)
+
+uvicorn.run(app=app,
+            host="0.0.0.0")
