@@ -12,20 +12,25 @@ import qrcode
 import io
 import random
 import qrcode
+from fastapi import FastAPI
+import uvicorn
 
 # states storage
 state_storage = StateMemoryStorage()  # you can init here another storage
 
 load_dotenv(".env")
-token = os.getenv("TEXT_PAY_BOT_TOKEN")
+textpaybot_token = os.getenv("TEXT_PAY_BOT_TOKEN")
+notifybot_token = os.getenv("NOTIFY_BOT_TOKEN")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
-bot = telebot.TeleBot(token, state_storage=state_storage)
-notify_bot = telebot.TeleBot(os.getenv("NOTIFY_BOT_TOKEN"))
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
+
+bot = telebot.TeleBot(textpaybot_token, state_storage=state_storage)
+notify_bot = telebot.TeleBot(notifybot_token)
 
 connection_params = {"database": db,
                      "user": db_username,
@@ -33,6 +38,20 @@ connection_params = {"database": db,
                      "password": db_password,
                      "port": db_port}
 # States group.
+
+app = FastAPI()
+
+
+@app.post(path=f"/{textpaybot_token}")
+def process_webhook_text_pay_bot(update: dict):
+    """
+    Process webhook calls for textpay
+    """
+    if update:
+        update = telebot.types.Update.de_json(update)
+        bot.process_new_updates([update])
+    else:
+        return
 
 
 class MyStates(StatesGroup):
@@ -1042,7 +1061,15 @@ def get_my_id(message):
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
 bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 
-bot.polling()
+bot.remove_webhook()
+
+# Set webhook
+bot.set_webhook(
+    url=WEBHOOK_URL_BASE + textpaybot_token
+)
+
+uvicorn.run(app=app,
+            host="0.0.0.0")
 
 
 # this qr stuff, i think something might go wrong if a user 1 creates a qr for user 2 to scan and pay
