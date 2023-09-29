@@ -3,3 +3,4 @@ env/
 qrcode generator.py
 alter.py
 custom_states.py
+__pycache__
