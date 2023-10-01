@@ -12,8 +12,9 @@ import qrcode
 import io
 import random
 import qrcode
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 import uvicorn
+from pydantic import BaseModel
 
 # states storage
 state_storage = StateMemoryStorage()  # you can init here another storage
@@ -868,9 +869,7 @@ def qr_code_content_handler(qr_code_content_message):
     # change the name of this user_id in the qr_info tabl to charger id
     select_qr_info_from_qr_info_table_sql = "SELECT qr_used from qr_info WHERE user_id = %s AND qr_id = %s"
     select_charger_info_from_users_wallet_table_sql = "SELECT first_name, last_name from users_wallet where user_id = %s"
-    # an error would occur if a wrong user_id is given name_first, name_last = result
-    # TypeError: cannot unpack non-iterable NoneType object
-    # to see this error, just input a correct qr but just change the first number in the generated code
+
     cursor.execute(
         select_charger_info_from_users_wallet_table_sql, (charger_id, ))
     result = cursor.fetchone()
@@ -882,6 +881,16 @@ def qr_code_content_handler(qr_code_content_message):
         bot.send_message(c_id, "This QR code is invalid.")
         bot.delete_state(user_id=u_id, chat_id=c_id)
         return
+    if charger_id == u_id:
+        bot.send_message(
+            c_id, "You can't create and scan the same qr. 😮‍💨. Now the QR is invalid")
+        update_qr_used_to_true_in_qr_info_table_sql = "UPDATE qr_info SET qr_used = %s WHERE qr_id = %s"
+        cursor.execute(
+            update_qr_used_to_true_in_qr_info_table_sql, (True, qr_id))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        bot.delete_state(user_id=u_id, chat_id=c_id)
 
     cursor.execute(select_qr_info_from_qr_info_table_sql, (charger_id, qr_id))
     result = cursor.fetchone()
@@ -891,7 +900,6 @@ def qr_code_content_handler(qr_code_content_message):
         bot.send_message(
             c_id, "The QR code that was scanned is not from TextPay. The person that initiated this transaction might be fraudulent. 👮🏾‍♂️")
         bot.delete_state(user_id=u_id, chat_id=c_id)
-        return
 
     if retrieved_qr_used == False:
         with bot.retrieve_data(u_id, c_id) as user_data:
@@ -1058,6 +1066,23 @@ def get_my_id(message):
         message, f"Your ID is `{message.from_user.id}`", parse_mode="MarkdownV2")
 
 
+class UserDetails(BaseModel):
+    user_id: int
+    amount: int
+
+
+@app.put(path="/notify_users_wallet_top_up/{authentication_token}/")
+def notify_users_wallet_top_up(authentication_token: str, user: UserDetails):
+    if authentication_token == os.getenv("ADMIN_PASSWORD"):
+        bot.send_message(
+            user.user_id, f"You have just added ₦{user.amount} into your wallet. Thanks for texting with us 👍😉.")
+        raise HTTPException(status_code=status.HTTP_200_OK,
+                            detail=f"User {user.user_id} notified.")
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid authentication token.")
+
+
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
 bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 
@@ -1077,12 +1102,6 @@ uvicorn.run(app=app,
 # since the new qr woul have a new transaction number which would be the only number attached to user 1
 
 
-# implement the get my id
-# where i stopped today is the place where whether to use username of user_id got confusing. I already started converting the querying with user id in my code
-# but then again, i just thought that not every telegram user has a username. so it might not work well. but then everyone has a user id. So i'm thinking,
-# since i mandate people to give me their names at the start, maybe i'm going to use their names when they text money to others. So like the message you'd be
-# seeing would be something like <first name> <last name> texted you x amount.
-
 # PROBLEMS
 # When a user deletes their wallet, it deletes only transactions that they initiated. So if they click transaction history,
 #  they would still see that someone texted them money. But they won't sha see that they texted anyone money
@@ -1095,3 +1114,6 @@ uvicorn.run(app=app,
 # the amount and the id of the recipient so you can take your device around even when you are offline and you can pay for something by scanning the qr code.
 # so on the pos, it scans your qr code and then asks you to input your password. if the id on the qr and the password match, then it would print the paper
 # with the amount you want to pay
+
+
+# if a user creates a qr before one was used, the old one would still be unused.

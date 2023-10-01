@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 import datetime
 from decimal import Decimal
+import requests
 
 load_dotenv(".env")
 db = os.getenv("DB_NAME")
@@ -209,8 +210,19 @@ def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWa
                     cursor.execute(update_user_wallet_in_users_wallet_table_sql,
                                    (add_to_wallet_details.amount, add_to_wallet_details.user_id))
                     connection.commit()
+                    data = {
+                        "user_id": AddToWallet.user_id,
+                        "amount": AddToWallet.amount
+                    }
+                    response = requests.put(
+                        f"https://textpay.onrender.com/{os.getenv('ADMIN_PASSWORD')}/", json=data)
+                    if response.status_code != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST, detail="Something somewhere went wrong.")
+
                     raise HTTPException(
                         status_code=status.HTTP_200_OK, detail=f"You have added ₦{add_to_wallet_details.amount} to user id {add_to_wallet_details.user_id}'s wallet")
+
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND, detail="User doesn't exist")
