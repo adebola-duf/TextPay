@@ -3,7 +3,9 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from fastapi import FastAPI
+import requests
+from decimal import Decimal
+from fastapi import FastAPI, HTTPException, status
 import uvicorn
 
 load_dotenv(".env")
@@ -141,18 +143,25 @@ def add_to_wallet(message):
     update_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
     cursor.execute(update_sql, (amount, userglobal_id))
 
+    data = {
+        "user_id": userglobal_id,
+        "amount": amount
+    }
+    response = requests.put(
+        f"https://textpay.onrender.com/notify_users_wallet_top_up/{os.getenv('ADMIN_PASSWORD')}/", json=data)
+    if response.status_code != 200:
+        bot.send_message(message.chat.id, "Something went wrong somewhere.")
+        return
     connection.commit()
     cursor.close()
     connection.close()
     bot.send_message(
         message.chat.id, f"You have added ₦{amount} to {userglobal_id}'s wallet. Click /done if you are done for today.")
     updated_wallets.append(str(userglobal_id))
-    bot.send_message(
-        userglobal_id, f"Your account has been credited with ₦{amount}")
 
 
 def deduct_from_wallet(message):
-    amount = float(message.text)
+    amount = Decimal(message.text)
     connection = psycopg2.connect(**connection_params)
     cursor = connection.cursor()
 
