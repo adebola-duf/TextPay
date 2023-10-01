@@ -215,7 +215,7 @@ def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWa
                         "amount": add_to_wallet_details.amount
                     }
                     response = requests.put(
-                        f"https://textpay.onrender.com/{os.getenv('ADMIN_PASSWORD')}/", json=data)
+                        f"https://textpay.onrender.com/notify_users_wallet_top_up/{os.getenv('ADMIN_PASSWORD')}/", json=data)
                     if response.status_code != 200:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST, detail="Something somewhere went wrong.")
