@@ -1068,7 +1068,7 @@ def get_my_id(message):
 
 class UserDetails(BaseModel):
     user_id: int
-    amount: int
+    amount: Decimal
 
 
 @app.put(path="/notify_users_wallet_top_up/{authentication_token}/")
