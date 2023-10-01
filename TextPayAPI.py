@@ -211,8 +211,8 @@ def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWa
                                    (add_to_wallet_details.amount, add_to_wallet_details.user_id))
                     connection.commit()
                     data = {
-                        "user_id": AddToWallet.user_id,
-                        "amount": AddToWallet.amount
+                        "user_id": add_to_wallet_details.user_id,
+                        "amount": add_to_wallet_details.amount
                     }
                     response = requests.put(
                         f"https://textpay.onrender.com/{os.getenv('ADMIN_PASSWORD')}/", json=data)
