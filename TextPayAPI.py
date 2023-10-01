@@ -193,7 +193,7 @@ def text_to_other(authentication_token: str, sender_receiver: SenderReceiver):
 
 class AddToWallet(BaseModel):
     user_id: int
-    amount: int
+    amount: Decimal
 
 
 @app.put(path="/add-to-wallet/{authentication_token}")
