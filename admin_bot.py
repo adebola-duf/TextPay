@@ -145,18 +145,16 @@ def add_to_wallet(message):
 
     data = {
         "user_id": userglobal_id,
-        "amount": amount
+        "amount": str(amount)
     }
+    connection.commit()
+    cursor.close()
+    connection.close()
     response = requests.put(
         f"https://textpay.onrender.com/notify_users_wallet_top_up/{os.getenv('ADMIN_PASSWORD')}/", json=data)
     if response.status_code != 200:
         bot.send_message(message.chat.id, "Something went wrong somewhere.")
         return
-    connection.commit()
-    cursor.close()
-    connection.close()
-    bot.send_message(
-        message.chat.id, f"You have added ₦{amount} to {userglobal_id}'s wallet. Click /done if you are done for today.")
     updated_wallets.append(str(userglobal_id))
 
 

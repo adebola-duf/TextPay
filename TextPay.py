@@ -1074,6 +1074,7 @@ class UserDetails(BaseModel):
 @app.put(path="/notify_users_wallet_top_up/{authentication_token}/")
 def notify_users_wallet_top_up(authentication_token: str, user: UserDetails):
     if authentication_token == os.getenv("ADMIN_PASSWORD"):
+        # no need to check if the user exist because when we call on this endpoint, we have already done that prior
         bot.send_message(
             user.user_id, f"You have just added ₦{user.amount} into your wallet. Thanks for texting with us 👍😉.")
         raise HTTPException(status_code=status.HTTP_200_OK,
