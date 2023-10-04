@@ -297,4 +297,4 @@ def send_notification(authentication_token, notification_data: NotificationData)
                                 detail="User has been notified.")
 
 
-# uvicorn.run(app=app, host="0.0.0.0")
+uvicorn.run(app=app, host="0.0.0.0")
