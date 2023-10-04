@@ -76,6 +76,11 @@ class MyStates(StatesGroup):
     qr_text_confirmation = State()
     password_for_qr_scan = State()
 
+    liquidate_enter_password = State()
+    liquidate_enter_amount_to_liquidate = State()
+    liquidate_enter_account_number = State()
+    liquidate_enter_bank_name = State()
+
 
 def delete_confirmation_markup():
     markup = InlineKeyboardMarkup()
@@ -121,7 +126,9 @@ This is a list of the commands:
 
 /get_my_id - To get your id.     
                 
-/delete - To Delete your wallet. But there is a breaking fee of ₦100.
+/delete - To Delete your wallet.
+                     
+/liquidate - To liquidate money into your bank account.
                 
 /support - For support information.""")
     else:
@@ -303,7 +310,7 @@ def wallet_balance(message):
             message, f'Your wallet balance is  ₦{wallet_balance}')
     else:
         bot.reply_to(
-            message, "You don't have a wallet with us. To create a wallet click /create_wallet")
+            message, "You don't have a wallet with us 😲. To create a wallet click /create_wallet")
 
     cursor.close()
     connection.close()
@@ -334,7 +341,7 @@ def make_payment(message):
             5024452557, f"`{message.from_user.id}` might be about to make payments into their wallet or they are just testing it out\. Either way sha buckle up\. Open up gmail to receive paystack's mail\. We don't want to delay a potential long term customer\.", parse_mode="MarkdownV2")
     else:
         bot.reply_to(
-            message, "You can't make payments since you don't have a wallet. To create a wallet click /create_wallet.")
+            message, "You can't make payments since you don't have a wallet with us 😲. To create a wallet click /create_wallet.")
 
     cursor.close()
     connection.close()
@@ -456,7 +463,7 @@ def authenticate_password_for_delete(entered_password_message):
             return
         else:
             bot.send_message(
-                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to Christ ✝️")
     bot.delete_state(user_id=u_id, chat_id=c_id)
 
 
@@ -491,7 +498,7 @@ def initiate_send_to_other(message):
             user_data["no_trials_left"] = 5
     else:
         bot.reply_to(
-            message, "You can't text ₦₦ to another user since you don't have a wallet with us. To create a wallet click /create_wallet")
+            message, "You can't text ₦₦ to another user since you don't have a wallet with us 😲. To create a wallet click /create_wallet")
 
     cursor.close()
     connection.close()
@@ -524,7 +531,7 @@ def authenticate_password_for_text_to_other_transactions(entered_password_messag
             return
         else:
             bot.send_message(
-                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to Christ ✝️")
     bot.delete_state(user_id=u_id, chat_id=c_id)
 
 
@@ -729,7 +736,7 @@ def create_payment_qr(message):
             user_id=u_id, state=MyStates.enter_amount_to_charge_for_create_qr_state, chat_id=c_id)
     else:
         bot.reply_to(
-            message, "You don't have a wallet with us. To create a wallet click /create_wallet")
+            message, "You don't have a wallet with us 😲. To create a wallet click /create_wallet")
     cursor.close()
     connection.close()
 
@@ -840,7 +847,7 @@ def scan_payment_qr(message):
         bot.set_state(user_id=u_id, state=MyStates.qr_scanned, chat_id=c_id)
     else:
         bot.reply_to(
-            message, "You don't have a wallet with us. To create a wallet click /create_wallet")
+            message, "You don't have a wallet with us 😲. To create a wallet click /create_wallet")
 
     cursor.close()
     connection.close()
@@ -1056,7 +1063,7 @@ def authenticate_password_for_qr_transactions(entered_password_message):
             return
         else:
             bot.send_message(
-                chat_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to christ ✝️")
+                chat_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to Christ ✝️")
     bot.delete_state(user_id=chargee_id, chat_id=chat_id)
 
 
@@ -1064,6 +1071,153 @@ def authenticate_password_for_qr_transactions(entered_password_message):
 def get_my_id(message):
     bot.reply_to(
         message, f"Your ID is `{message.from_user.id}`", parse_mode="MarkdownV2")
+
+
+@bot.message_handler(commands=["liquidate"])
+def liquidate(message):
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    with psycopg2.connect(**connection_params) as connection:
+        with connection.cursor() as cursor:
+            select_user_transaction_password_from_users_wallet_sql = "SELECT transaction_password, wallet_balance FROM users_wallet WHERE user_id = %s;"
+            cursor.execute(
+                select_user_transaction_password_from_users_wallet_sql, (u_id, ))
+            result = cursor.fetchone()
+            if result:
+                user_password, wallet_balance = result
+                if wallet_balance < 100:
+                    bot.reply_to(
+                        message, f"You can't liquidate when you have less than ₦100 and you have ₦{wallet_balance} in your wallet.")
+                else:
+                    bot.set_state(
+                        user_id=u_id, state=MyStates.liquidate_enter_password, chat_id=c_id)
+                    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+                        user_data["password"] = user_password
+                        user_data["wallet_balance"] = wallet_balance
+                        user_data["no_trials_left"] = 5
+                    bot.reply_to(message, "Enter your transaction password. 😔")
+            else:
+                bot.reply_to(
+                    message, "You don't have a wallet with us 😲. To create a wallet click /create_wallet")
+
+
+@bot.message_handler(state=MyStates.liquidate_enter_password)
+def password_authentication(message):
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    entered_password = message.text
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_password = user_data["password"]
+        wallet_balance = user_data["wallet_balance"]
+        no_trials_left = user_data["no_trials_left"]
+    bot.delete_message(chat_id=c_id, message_id=message.message_id)
+    if entered_password != user_password:
+        if no_trials_left > 0:
+            bot.send_message(
+                c_id, f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trials or you can click /cancel to cancel" if no_trials_left > 1 else f"You are sooo wrong. See your head like ole. 🤣😂. You have {no_trials_left} more trial  or you can click /cancel to cancel")
+            user_data["no_trials_left"] -= 1
+            return
+        else:
+            bot.send_message(
+                c_id, "bruhhhhh you ran out of trials. I'm guessing you are a thief. You better give your life to Christ ✝️")
+            bot.delete_state(user_id=u_id, chat_id=c_id)
+    else:
+        bot.send_message(c_id, "So, how much do you want to liquidate?")
+        bot.set_state(
+            u_id, state=MyStates.liquidate_enter_amount_to_liquidate, chat_id=c_id)
+
+
+@bot.message_handler(state=MyStates.liquidate_enter_amount_to_liquidate)
+def account_number(message):
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    try:
+        amount_to_liquidate = Decimal(message.text)
+    except InvalidOperation:
+        bot.reply_to(
+            "You entered an invalid amount. 🤔. This time please enter a correct amount. #numbers only or you can click /cancel to cancel.")
+        return
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        wallet_balance = user_data["wallet_balance"]
+        user_data["amount_to_liquidate"] = amount_to_liquidate
+    if wallet_balance < amount_to_liquidate:
+        bot.send_message(
+            c_id, f"You don't have up to ₦{amount_to_liquidate} in your wallet since you have only ₦{wallet_balance} left. You can try again or click /cancel to cancel.")
+        return
+    bot.set_state(u_id, MyStates.liquidate_enter_account_number, c_id)
+    bot.reply_to(
+        message, "Great!! Enter the account number to send the money to.")
+    bot.set_state(message.from_user.id,
+                  MyStates.liquidate_enter_account_number, message.chat.id)
+
+
+@bot.message_handler(state=MyStates.liquidate_enter_account_number)
+def account_number(message):
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    try:
+        int(message.text)
+        account_number = message.text
+        if len(account_number) < 10:
+            bot.send_message(
+                c_id, "You entered an invalid account number. You can try again or click /cancel to cancel.")
+            return
+    except ValueError:
+        bot.send_message(
+            c_id, "You entered an invalid account number. You can try again or click /cancel to cancel.")
+        return
+
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_data["account_number"] = int(account_number)
+    bot.reply_to(message, "Please now send the bank name.")
+    bot.set_state(u_id, MyStates.liquidate_enter_bank_name, c_id)
+
+
+def liquidate_confirmation_markup():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(InlineKeyboardButton(text="Yes ✅", callback_data="liquidate_confirmation_yes"),
+               InlineKeyboardButton(text="No 🚫", callback_data="liquidate_confirmation_no"))
+    return markup
+
+
+@bot.message_handler(state=MyStates.liquidate_enter_bank_name)
+def liquidation_confirmation(message):
+    u_id = message.from_user.id
+    c_id = message.chat.id
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_data["bank_name"] = message.text
+        amount_to_liquidate = user_data["amount_to_liquidate"]
+        bank_name = user_data["bank_name"]
+        account_number = user_data["account_number"]
+    bot.send_message(message.chat.id, f"Are you sure you want to liquidate ₦{amount_to_liquidate} to {bank_name.upper()}: {account_number}?",
+                     reply_markup=liquidate_confirmation_markup())
+
+
+@bot.callback_query_handler(state=MyStates.liquidate_enter_bank_name, func=lambda call: call.data.startswith("liquidate_confirmation_"))
+def liquidation_confirmation(call):
+    u_id = call.from_user.id
+    c_id = call.message.chat.id
+    if call.data == "liquidate_confirmation_yes":
+        with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+            user_password = user_data["password"]
+            wallet_balance = user_data["wallet_balance"]
+            amount_to_liquidate = user_data["amount_to_liquidate"]
+            account_number = user_data["account_number"]
+            bank_name = user_data["bank_name"]
+
+        # i feel we should also represent this in the transactions table so wehen you want to see your transaaction history, you'd see a place wehn you liquidated
+        update_user_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s"
+        with psycopg2.connect(**connection_params) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    update_user_wallet_balance_in_users_wallet_table_sql, (amount_to_liquidate, u_id))
+                connection.commit()
+        notify_bot.send_message(
+            5024452557, f"`{u_id}` just liquidated ₦`{amount_to_liquidate}`\. You are meant to send ₦`{amount_to_liquidate}` to acct no: `{account_number}`, bank: `{bank_name}`\.", parse_mode="MarkdownV2")
+        bot.send_message(
+            c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.")
+        bot.delete_state(u_id, c_id)
 
 
 class UserDetails(BaseModel):
@@ -1084,6 +1238,20 @@ def notify_users_wallet_top_up(authentication_token: str, user: UserDetails):
                             detail="Invalid authentication token.")
 
 
+class NotificationData(BaseModel):
+    chat_id: int
+    message: str
+
+
+@app.post("/send-notification-to-user/{authentication_token}")
+def send_notification(authentication_token, notification_data: NotificationData):
+    if authentication_token != os.getenv("ADMIN_PASSWORD"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Authentication key is wrong.")
+    else:
+        bot.send_message(notification_data.chat_id, notification_data.message)
+
+
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))
 bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 
@@ -1096,7 +1264,6 @@ bot.set_webhook(
 
 uvicorn.run(app=app,
             host="0.0.0.0")
-
 
 # this qr stuff, i think something might go wrong if a user 1 creates a qr for user 2 to scan and pay
 # and before both of them are done settling the payment, user 1 creates another qr. The previous qr beomes useless and only the new qr would be the usable one/
