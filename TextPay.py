@@ -1292,7 +1292,7 @@ async def receive_webhook(request: Request):
                     with connection.cursor() as cursor:
                         select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
                         cursor.execute(
-                            select_user_info_from_users_wallet_table, (enterd_user_id.user_id, ))
+                            select_user_info_from_users_wallet_table, (enterd_user_id, ))
                         user_info = cursor.fetchone()
                         if user_info:
                             update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
