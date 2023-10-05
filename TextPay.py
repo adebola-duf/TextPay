@@ -12,9 +12,13 @@ import qrcode
 import io
 import random
 import qrcode
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 import uvicorn
 from pydantic import BaseModel
+import hashlib
+import hmac
+import requests
+from starlette.responses import JSONResponse
 
 # states storage
 state_storage = StateMemoryStorage()  # you can init here another storage
@@ -1225,21 +1229,9 @@ class UserDetails(BaseModel):
     amount: Decimal
 
 
-@app.put(path="/notify_users_wallet_top_up/{authentication_token}/")
-def notify_users_wallet_top_up(authentication_token: str, user: UserDetails):
-    if authentication_token == os.getenv("ADMIN_PASSWORD"):
-        # no need to check if the user exist because when we call on this endpoint, we have already done that prior
-        bot.send_message(
-            user.user_id, f"You have just added ₦{user.amount} into your wallet. Thanks for texting with us 👍😉.")
-        raise HTTPException(status_code=status.HTTP_200_OK,
-                            detail=f"User {user.user_id} notified.")
-    else:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid authentication token.")
-
-
 class NotificationData(BaseModel):
-    chat_id: int
+    chat_id: int = None
+    user_id: int
     message: str
 
 
@@ -1249,7 +1241,109 @@ def send_notification(authentication_token, notification_data: NotificationData)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Authentication key is wrong.")
     else:
-        bot.send_message(notification_data.chat_id, notification_data.message)
+        with psycopg2.connect(**connection_params) as connection:
+            with connection.cursor() as cursor:
+                select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
+                cursor.execute(
+                    select_user_info_from_users_wallet_table, (notification_data.user_id, ))
+                result = cursor.fetchone()
+                if result and notification_data.chat_id:
+                    bot.send_message(notification_data.chat_id,
+                                     notification_data.message)
+                    raise HTTPException(
+                        status_code=status.HTTP_200_OK, detail="User notified successfully.")
+                elif result and not notification_data.chat_id:
+                    bot.send_message(notification_data.user_id,
+                                     notification_data.message)
+                    raise HTTPException(
+                        status_code=status.HTTP_200_OK, detail="User notified successfully.")
+                elif not result:
+                    print(
+                        f"user id {notification_data.user_id} doesn't exist.")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                        detail=f"user id {notification_data.user_id} doesn't exist.")
+
+
+secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"), 'UTF-8')
+
+
+@app.post(path="/paystack-webhook")
+async def receive_webhook(request: Request):
+    try:
+        body = await request.body()
+        signature = request.headers['x-paystack-signature']
+
+        hash = hmac.new(secret, body, hashlib.sha512).hexdigest()
+
+        if hash == signature:
+            event = await request.json()
+            # handle the case where the user puts in a non convertible to integer stuff instead of their user_id
+            response = JSONResponse(
+                content={"message": "Webhook received and acknowledged"}, status_code=200)
+            if event["event"] == "charge.success":
+                enterd_user_id = int(
+                    event["data"]["metadata"]["custom_fields"][0]["value"])
+                amount_without_paystack_charge = event["data"]["amount"] / 100
+                first_name = event["data"]["customer"]["first_name"]
+                last_name = event["data"]["customer"]["last_name"]
+                paystack_charge = event["data"]["fees"] / 100
+                amount_with_paystack_charge = amount_without_paystack_charge - paystack_charge
+                with psycopg2.connect(**connection_params) as connection:
+                    with connection.cursor() as cursor:
+                        select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
+                        cursor.execute(
+                            select_user_info_from_users_wallet_table, (enterd_user_id.user_id, ))
+                        user_info = cursor.fetchone()
+                        if user_info:
+                            update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+                            cursor.execute(update_user_wallet_in_users_wallet_table_sql,
+                                           (amount_with_paystack_charge, enterd_user_id))
+                            connection.commit()
+                            print(
+                                f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
+                            message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+
+                            data = {
+                                "user_id": enterd_user_id,
+                                "message": message
+                            }
+                            response = requests.put(
+                                f"https://textpay.onrender.com/send-notification-to-user/{os.getenv('ADMIN_PASSWORD')}/", json=data)
+                            if response.status_code == 404:
+                                print(
+                                    f"user id: {enterd_user_id} doesn't exist.")
+                            elif response.status_code == 401:
+                                print("Authentication key is wrong.")
+                            elif response.status_code == 200:
+                                print(
+                                    f"user id: {enterd_user_id} has been notifed about their payment of ₦{amount_without_paystack_charge} into their wallet.")
+
+            # i don't think paystack sends events when the transation fails so imma comment this out
+            # else:
+            #     print("failed payment.")
+
+        else:
+            print("Invalid webhook signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhoook signature.")
+
+    except HTTPException as e:
+        if e.status_code == 200:
+            pass
+        elif e.status_code == 500:
+            print(f"An error occurred somewhere.")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occured somewhere")
+        elif e.status_code == 401:
+            print("Invalid webhook signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhoook signature.")
+        else:
+            print(
+                f"HTTPException with status code {e.status_code}: {e.detail}")
+    except Exception as e:
+        # Handle other types of exceptions
+        print(f"An exception occurred: {e}")
 
 
 bot.add_custom_filter(custom_filter=custom_filters.StateFilter(bot))

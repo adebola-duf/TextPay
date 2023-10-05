@@ -212,20 +212,24 @@ def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWa
                     connection.commit()
                     data = {
                         "user_id": add_to_wallet_details.user_id,
-                        "amount": str(add_to_wallet_details.amount)
+                        "message": f"You have just added ₦{add_to_wallet_details.amount} into your wallet. Thanks for texting with us 👍😉."
                     }
                     response = requests.put(
-                        f"https://textpay.onrender.com/notify_users_wallet_top_up/{token}/", json=data)
-                    if response.status_code != 200:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST, detail="Something somewhere went wrong.")
+                        f"https://textpay.onrender.com/send-notification-to-user/{token}/", json=data)
 
-                    raise HTTPException(
-                        status_code=status.HTTP_200_OK, detail=f"You have added ₦{add_to_wallet_details.amount} to user id {add_to_wallet_details.user_id}'s wallet")
+                    if response.status_code == 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST, detail=f"You have added ₦{add_to_wallet_details.amount} to user id: {add_to_wallet_details.user_id}'s wallet and user has been notifed about their payment of ₦{add_to_wallet_details.amount} into their wallet")
+                    elif response.status_code == 401:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticatio key is wrong.")
+                    elif response.status_code == 400:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                            detail=f"user id: {add_to_wallet_details.user_id} doesn't exist.")
 
                 else:
                     raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail="User doesn't exist")
+                        status_code=status.HTTP_404_NOT_FOUND, detail=f"user id: {add_to_wallet_details.user_id} doesn't exist")
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
