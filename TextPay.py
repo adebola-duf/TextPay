@@ -31,6 +31,7 @@ db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
 db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
+secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"), 'UTF-8')
 
 WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
 
@@ -1262,9 +1263,6 @@ def send_notification(authentication_token, notification_data: NotificationData)
                         f"user id {notification_data.user_id} doesn't exist.")
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                         detail=f"user id {notification_data.user_id} doesn't exist.")
-
-
-secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"), 'UTF-8')
 
 
 @app.post(path="/paystack-webhook")
