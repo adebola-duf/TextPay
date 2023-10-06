@@ -1235,15 +1235,17 @@ class NotificationData(BaseModel):
     user_id: int
     message: str
     operation: str = None
+    authentication_token: str
+    amount: str
 
 
-@app.post("/send-notification-to-user/{authentication_token}/{amount}")
-def send_notification(amount: str, authentication_token, notification_data: NotificationData):
-    if authentication_token != os.getenv("ADMIN_PASSWORD"):
+@app.post("/send-notification-to-user")
+def send_notification(notification_data: NotificationData):
+    if notification_data.authentication_token != os.getenv("ADMIN_PASSWORD"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Authentication key is wrong.")
     else:
-        amount = Decimal(amount)
+        amount = Decimal(notification_data.amount)
         with psycopg2.connect(**connection_params) as connection:
             with connection.cursor() as cursor:
                 select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
