@@ -12,19 +12,6 @@ secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"),
                'UTF-8')
 
 load_dotenv(".env")
-db = os.getenv("DB_NAME")
-db_username = os.getenv("DB_USERNAME")
-db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_INTERNAL_HOST")
-db_port = os.getenv("DB_PORT")
-token = os.getenv("ADMIN_PASSWORD")
-
-connection_params = {"database": db,
-                     "user": db_username,
-                     "host": db_host,
-                     "password": db_password,
-                     "port": db_port}
-
 
 app = FastAPI()
 
@@ -86,8 +73,8 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         if isinstance(e, HTTPException):
             pass
-        # Handle other types of exceptions
-        print(f"An exception occurred: {e}")
+        else:
+            print(f"An exception occurred: {e}")
 
 
 if __name__ == "__main__":
