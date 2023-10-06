@@ -18,10 +18,9 @@ app = FastAPI()
 
 def handle_webhook_stuff_on_my_end(event):
     if event["event"] == "charge.success":
-        print(event)
         # handle the case where the user puts in a non convertible to integer stuff instead of their user_id
         enterd_user_id = int(
-            event["data"]["metadata"]["custom_fields"][0]["value"])
+            event["data"]["metadata"]["\\custom_fields\\"][0]["\\value\\"])
         amount_without_paystack_charge = event["data"]["amount"] / 100
         first_name = event["data"]["customer"]["first_name"]
         last_name = event["data"]["customer"]["last_name"]
