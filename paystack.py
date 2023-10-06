@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import requests
 
 app = FastAPI()
-secret = bytes("sk_test_af5fa201ddde9006fa054fc5f4e096297cba67b4",
+secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"),
                'UTF-8')
 
 load_dotenv(".env")
