@@ -1258,8 +1258,8 @@ def send_notification(amount: str, authentication_token, notification_data: Noti
                     connection.commit()
                     bot.send_message(text=notification_data.message,
                                      chat_id=notification_data.chat_id)
-                    JSONResponse(status_code=200,
-                                 content="User notified successfully.")
+                    return JSONResponse(status_code=200,
+                                        content="User notified successfully.")
                 elif result and notification_data.operation and not notification_data.chat_id:
                     update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
                     cursor.execute(
@@ -1268,19 +1268,19 @@ def send_notification(amount: str, authentication_token, notification_data: Noti
                     # beware of sending to user_id rather than chat_id incase telegramm decide to make it a must to send message using only chat id.
                     bot.send_message(text=notification_data.message,
                                      chat_id=notification_data.user_id)
-                    JSONResponse(status_code=200,
-                                 content="User notified successfully.")
+                    return JSONResponse(status_code=200,
+                                        content="User notified successfully.")
 
                 elif result and notification_data.chat_id and not notification_data.operation:
                     bot.send_message(notification_data.chat_id,
                                      notification_data.message)
-                    JSONResponse(status_code=200,
-                                 content="User notified successfully.")
+                    return JSONResponse(status_code=200,
+                                        content="User notified successfully.")
                 elif result and not notification_data.chat_id and not notification_data.operation:
                     bot.send_message(notification_data.user_id,
                                      notification_data.message)
-                    JSONResponse(status_code=200,
-                                 content="User notified successfully.")
+                    return JSONResponse(status_code=200,
+                                        content="User notified successfully.")
                 elif not result:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                         detail=f"user id {notification_data.user_id} doesn't exist.")
