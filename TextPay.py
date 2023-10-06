@@ -12,7 +12,7 @@ import qrcode
 import io
 import random
 import qrcode
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, BackgroundTasks
 import uvicorn
 from pydantic import BaseModel
 import hashlib
@@ -1234,33 +1234,54 @@ class NotificationData(BaseModel):
     chat_id: int = None
     user_id: int
     message: str
+    operation: str = None
 
 
-@app.post("/send-notification-to-user/{authentication_token}")
-def send_notification(authentication_token, notification_data: NotificationData):
+@app.post("/send-notification-to-user/{authentication_token}/{amount}")
+def send_notification(amount: str, authentication_token, notification_data: NotificationData):
     if authentication_token != os.getenv("ADMIN_PASSWORD"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Authentication key is wrong.")
     else:
+        amount = Decimal(amount)
         with psycopg2.connect(**connection_params) as connection:
             with connection.cursor() as cursor:
                 select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
                 cursor.execute(
                     select_user_info_from_users_wallet_table, (notification_data.user_id, ))
                 result = cursor.fetchone()
-                if result and notification_data.chat_id:
+
+                if result and notification_data.operation and notification_data.chat_id:
+                    update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+                    cursor.execute(
+                        update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
+                    connection.commit()
+                    bot.send_message(text=notification_data.message,
+                                     chat_id=notification_data.chat_id)
+                    JSONResponse(status_code=200,
+                                 content="User notified successfully.")
+                elif result and notification_data.operation and not notification_data.chat_id:
+                    update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+                    cursor.execute(
+                        update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
+                    connection.commit()
+                    # beware of sending to user_id rather than chat_id incase telegramm decide to make it a must to send message using only chat id.
+                    bot.send_message(text=notification_data.message,
+                                     chat_id=notification_data.user_id)
+                    JSONResponse(status_code=200,
+                                 content="User notified successfully.")
+
+                elif result and notification_data.chat_id and not notification_data.operation:
                     bot.send_message(notification_data.chat_id,
                                      notification_data.message)
-                    raise HTTPException(
-                        status_code=status.HTTP_200_OK, detail="User notified successfully.")
-                elif result and not notification_data.chat_id:
+                    JSONResponse(status_code=200,
+                                 content="User notified successfully.")
+                elif result and not notification_data.chat_id and not notification_data.operation:
                     bot.send_message(notification_data.user_id,
                                      notification_data.message)
-                    raise HTTPException(
-                        status_code=status.HTTP_200_OK, detail="User notified successfully.")
+                    JSONResponse(status_code=200,
+                                 content="User notified successfully.")
                 elif not result:
-                    print(
-                        f"user id {notification_data.user_id} doesn't exist.")
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                         detail=f"user id {notification_data.user_id} doesn't exist.")
 
@@ -1315,6 +1336,8 @@ async def receive_webhook(request: Request):
                             elif response.status_code == 200:
                                 print(
                                     f"user id: {enterd_user_id} has been notifed about their payment of ₦{amount_without_paystack_charge} into their wallet.")
+                            raise HTTPException(
+                                status_code=status.HTTP_200_OK, detail=f"Done with the whole webhook stuff for user id: {enterd_user_id}")
 
             # i don't think paystack sends events when the transation fails so imma comment this out
             # else:
