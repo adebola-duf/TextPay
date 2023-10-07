@@ -18,8 +18,8 @@ app = FastAPI()
 
 
 def handle_webhook_stuff_on_my_end(event):
+
     if event["event"] == "charge.success":
-        print(event)
         metadata: str = event["data"]["metadata"]
         index_of_first_opening_square_bracket_in_metadata: int = metadata.index(
             "[")
@@ -27,6 +27,7 @@ def handle_webhook_stuff_on_my_end(event):
             "]")
         custom_fields_string: str = metadata[index_of_first_opening_square_bracket_in_metadata: (
             index_of_first_closing_square_bracket_in_metadata + 1)]
+        # this gets the first dictionary in like the lemme call it string list. So even though we have multiple custom fields, for now, we still just want to get the first one.
         custom_fields_dict: dict = json.loads(custom_fields_string)[0]
         # handle the case where the user puts in a non convertible to integer stuff instead of their user_id
         enterd_user_id = custom_fields_dict["value"]
@@ -37,25 +38,30 @@ def handle_webhook_stuff_on_my_end(event):
         paystack_charge = event["data"]["fees"] / 100
         amount_with_paystack_charge = amount_without_paystack_charge - paystack_charge
 
-        message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
-        data = {
-            "authentication_token": os.getenv('ADMIN_PASSWORD'),
-            "user_id": enterd_user_id,
-            "message": message,
-            "amount": str(amount_with_paystack_charge),
-            "operation": "add_to_wallet"  # could be anything
-        }
-
-        response = requests.post(
-            f"https://textpay.onrender.com/send-notification-to-user", json=data)
-        if response.status_code == 404:
-            print(response.json()["detail"])
-        elif response.status_code == 401:
-            print(response.json()["detail"])
-        elif response.status_code == 200:
-            print(
-                f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
-            print(response.content.decode("utf-8"))
+        if event["data"]["domain"] == "live":
+            message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+            data = {
+                "authentication_token": os.getenv('ADMIN_PASSWORD'),
+                "user_id": enterd_user_id,
+                "message": message,
+                "amount": str(amount_with_paystack_charge),
+                "operation": "add_to_wallet"  # could be anything
+            }
+            response = requests.post(
+                f"https://textpay.onrender.com/send-notification-to-user", json=data)
+            if response.status_code == 404:
+                print(response.json()["detail"])
+            elif response.status_code == 401:
+                print(response.json()["detail"])
+            elif response.status_code == 200:
+                print(
+                    f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
+                print(response.content.decode("utf-8"))
+            return
+        print(event)
+        # maybe you should send this message to my telegram using maybe notify bot
+        print(
+            f"Adebola user id: {enterd_user_id} just tried to use the test payment page. Maybe you should send them a warning message.")
 
     # i don't think paystack sends events when the transation fails so imma comment this out
     # else:
