@@ -63,8 +63,8 @@ def handle_webhook_stuff_on_my_end(event):
         print(
             f"Adebola user id: {enterd_user_id} just tried to use the test payment page. Maybe you should send them a warning message.")
 
-    if event["event"] == "transfer.success":
-        amount_with_paystack_charge
+    # if event["event"] == "transfer.success":
+    #     amount_with_paystack_charge
 
     # i don't think paystack sends events when the transation fails so imma comment this out
     # else:
@@ -81,6 +81,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
         if hash == signature:
             event = await request.json()
+            print(event)
             background_tasks.add_task(handle_webhook_stuff_on_my_end, event)
             response_content = {"message": "Webhook received and acknowledged"}
             return JSONResponse(content=response_content, status_code=200)
@@ -94,6 +95,8 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
             pass
         else:
             print(f"An exception occurred: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An exception occurred: {e}")
 
 
 if __name__ == "__main__":
