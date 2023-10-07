@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 import requests
+import json
 
 app = FastAPI()
 secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"),
@@ -18,9 +19,18 @@ app = FastAPI()
 
 def handle_webhook_stuff_on_my_end(event):
     if event["event"] == "charge.success":
+        print(event)
+        metadata: str = event["data"]["metadata"]
+        index_of_first_opening_square_bracket_in_metadata: int = metadata.index(
+            "[")
+        index_of_first_closing_square_bracket_in_metadata: int = metadata.index(
+            "]")
+        custom_fields_string: str = metadata[index_of_first_opening_square_bracket_in_metadata: (
+            index_of_first_closing_square_bracket_in_metadata + 1)]
+        custom_fields_dict: dict = json.loads(custom_fields_string)[0]
         # handle the case where the user puts in a non convertible to integer stuff instead of their user_id
-        enterd_user_id = int(
-            event["data"]["metadata"]["\\custom_fields\\"][0]["\\value\\"])
+        enterd_user_id = custom_fields_dict["value"]
+
         amount_without_paystack_charge = event["data"]["amount"] / 100
         first_name = event["data"]["customer"]["first_name"]
         last_name = event["data"]["customer"]["last_name"]

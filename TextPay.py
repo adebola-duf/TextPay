@@ -336,7 +336,7 @@ def make_payment(message):
     if result:
         markup = InlineKeyboardMarkup()
         paystack_web_app_button = InlineKeyboardButton(
-            "Pay into your wallet.", web_app=WebAppInfo(url="https://paystack.com/pay/TextPay"))
+            "Pay into your wallet.", web_app=WebAppInfo(url=os.getenv("PAYMENT_PAGE_URL")))
         markup.add(paystack_web_app_button)
 
         # the double underscore and backticks are markdown formatting.
