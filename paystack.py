@@ -18,7 +18,6 @@ app = FastAPI()
 
 
 def handle_webhook_stuff_on_my_end(event):
-    print(event)
     if event["event"] == "charge.success":
         metadata: str = event["data"]["metadata"]
         index_of_first_opening_square_bracket_in_metadata: int = metadata.index(
@@ -63,9 +62,6 @@ def handle_webhook_stuff_on_my_end(event):
         print(
             f"Adebola user id: {enterd_user_id} just tried to use the test payment page. Maybe you should send them a warning message.")
 
-    # if event["event"] == "transfer.success":
-    #     amount_with_paystack_charge
-
     # i don't think paystack sends events when the transation fails so imma comment this out
     # else:
     #     print("failed payment.")
@@ -81,7 +77,6 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
         if hash == signature:
             event = await request.json()
-            print(event)
             background_tasks.add_task(handle_webhook_stuff_on_my_end, event)
             response_content = {"message": "Webhook received and acknowledged"}
             return JSONResponse(content=response_content, status_code=200)
