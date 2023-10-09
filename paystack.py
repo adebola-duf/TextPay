@@ -7,6 +7,24 @@ import os
 from dotenv import load_dotenv
 import requests
 import json
+import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv(".env")
+db = os.getenv("DB_NAME")
+db_username = os.getenv("DB_USERNAME")
+db_password = os.getenv("DB_PASSWORD")
+db_host = os.getenv("DB_EXTERNAL_HOST")
+db_port = os.getenv("DB_PORT")
+
+
+connection_params = {"database": db,
+                     "user": db_username,
+                     "host": db_host,
+                     "password": db_password,
+                     "port": db_port}
+
 
 app = FastAPI()
 secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"),
@@ -18,7 +36,9 @@ app = FastAPI()
 
 
 def handle_webhook_stuff_on_my_end(event):
-    if event["event"] == "charge.success":
+    # they said something about sending a webhook event twice. So make sure if they send the same event twice, it doesn't credit the customer 2x
+    # he second part after the and prolly doesn't matter because they only send the event after a successful charge.
+    if event["event"] == "charge.success" and event["data"]["status"] == "success":
         metadata: str = event["data"]["metadata"]
         index_of_first_opening_square_bracket_in_metadata: int = metadata.index(
             "[")
@@ -36,27 +56,39 @@ def handle_webhook_stuff_on_my_end(event):
         last_name = event["data"]["customer"]["last_name"]
         paystack_charge = event["data"]["fees"] / 100
         amount_with_paystack_charge = amount_without_paystack_charge - paystack_charge
-
+        paystack_payment_reference = event["data"]["reference"]
         if event["data"]["domain"] == "live":
-            message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
-            data = {
-                "authentication_token": os.getenv('ADMIN_PASSWORD'),
-                "user_id": enterd_user_id,
-                "message": message,
-                "amount": str(amount_with_paystack_charge),
-                "operation": "add_to_wallet"  # could be anything
-            }
-            response = requests.post(
-                f"https://textpay.onrender.com/send-notification-to-user", json=data)
-            if response.status_code == 404:
-                print(response.json()["detail"])
-            elif response.status_code == 401:
-                print(response.json()["detail"])
-            elif response.status_code == 200:
-                print(
-                    f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
-                print(response.content.decode("utf-8"))
-            return
+            with psycopg2.connect(**connection_params) as connection:
+                with connection.cursor() as cursor:
+                    select_this_transaction_from_transactions_table_if_it_exists = "SELECT paystack_transaction_reference FROM transactions WHERE paystack_transaction_reference = %s"
+                    cursor.execute(
+                        select_this_transaction_from_transactions_table_if_it_exists, (paystack_payment_reference, ))
+                    result = cursor.fetchone()
+                    if result:
+                        return
+                    # if the that payment reference doesn't exist
+
+                    # requery paystack just to confirm transaction again but this isn't necessary since they only send the event after a successful charge.
+                    message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+                    data = {
+                        "authentication_token": os.getenv('ADMIN_PASSWORD'),
+                        "user_id": enterd_user_id,
+                        "message": message,
+                        "amount": str(amount_with_paystack_charge),
+                        "operation": "add_to_wallet"  # could be anything
+                    }
+                    response = requests.post(
+                        f"https://textpay.onrender.com/send-notification-to-user", json=data)
+                    if response.status_code == 404:
+                        print(response.json()["detail"])
+                    elif response.status_code == 401:
+                        print(response.json()["detail"])
+                    elif response.status_code == 200:
+                        print(
+                            f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
+                        print(response.content.decode("utf-8"))
+                    return
+
         print(event)
         # maybe you should send this message to my telegram using maybe notify bot
         print(

@@ -690,6 +690,13 @@ def transaction_history(message):
     cursor = connection.cursor()
     history = ""
 
+    select_user_id_from_users_wallet_table_sql = "SELECT user_id FROM users_wallet WHERE user_id = %s"
+    cursor.execute(select_user_id_from_users_wallet_table_sql, (user_id, ))
+    result = cursor.fetchone()
+    if not result:
+        bot.reply_to(
+            message.chat.id, "You don't have a wallet with us 😲. To create a wallet click /create_wallet")
+        return
     select_all_from_users_wallet_table_sql = """SELECT * FROM transactions
     WHERE sender_id = %s OR receiver_id = %s
     ORDER BY time_of_transaction DESC LIMIT 10"""
@@ -716,6 +723,8 @@ def transaction_history(message):
                     select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
                 history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}\n\n"
+            if sender_id == receiver_id:
+                history += f"{i + 1}. At {time_of_transaction}, you paid ₦{amount_transferred} into your wallet."
 
         bot.reply_to(message, history)
 
@@ -1254,8 +1263,16 @@ def send_notification(notification_data: NotificationData):
 
                 if result and notification_data.operation and notification_data.chat_id:
                     update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+
+                    insert_this_transaction_record_into_transactions_table = """INSERT INTO transactions
+                    (transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id, paystack_transaction_reference)
+                    VALUES (DEFAULT, %s, %s, %s, %s, %s)"""
+
                     cursor.execute(
                         update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
+                    cursor.execute(insert_this_transaction_record_into_transactions_table,
+                                   (notification_data.user_id, notification_data.user_id, ))
+
                     connection.commit()
                     bot.send_message(text=notification_data.message,
                                      chat_id=notification_data.chat_id)

@@ -22,6 +22,7 @@ transaction_id BIGSERIAL PRIMARY KEY,
 receiver_id BIGINT,
 time_of_transaction TIMESTAMP,
 amount_transferred DECIMAL(12, 2),
+paystack_transaction_reference TEXT,
 sender_id BIGINT,
 CONSTRAINT fk_user_wallet
 FOREIGN KEY (sender_id)
