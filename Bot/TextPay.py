@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telebot.storage import StateMemoryStorage
 from telebot.handler_backends import State, StatesGroup  # states
 from telebot import custom_filters
@@ -1240,7 +1240,7 @@ def liquidation_confirmation(call):
         notify_bot.send_message(
             5024452557, f"`{u_id}` just liquidated ₦`{amount_to_liquidate}`\. You are meant to send ₦`{amount_to_liquidate}` to acct no: `{account_number}`, bank: `{bank_name}`\.", parse_mode="MarkdownV2")
         bot.send_message(
-            c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.")
+            c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
 
 
