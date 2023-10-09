@@ -1214,6 +1214,11 @@ def liquidation_confirmation(message):
     u_id = message.from_user.id
     c_id = message.chat.id
     with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        with open('banks.txt', 'r') as file:
+            if message.text not in [banks.strip() for banks in file.readlines()]:
+                bot.send_message(
+                    "you entered an invalid bank name. You can try again or click /cancel.", reply_markup=bank_name_reply_markup())
+                return
         user_data["bank_name"] = message.text
         amount_to_liquidate = user_data["amount_to_liquidate"]
         bank_name = user_data["bank_name"]
