@@ -341,8 +341,7 @@ def make_payment(message):
         # the double underscore and backticks are markdown formatting.
         bot.reply_to(
             message, f"Please tap the button below\. Make sure to copy your user id it'd be needed during the process\. *Click this:* `{message.from_user.id}`", reply_markup=markup, parse_mode="MarkdownV2")
-        notify_bot.send_message(
-            5024452557, f"`{message.from_user.id}` might be about to make payments into their wallet or they are just testing it out\. Either way sha buckle up\. Open up gmail to receive paystack's mail\. We don't want to delay a potential long term customer\.", parse_mode="MarkdownV2")
+
     else:
         bot.reply_to(
             message, "You can't make payments since you don't have a wallet with us 😲. To create a wallet click /create_wallet.")
@@ -1167,7 +1166,7 @@ def account_number(message):
 
 
 def bank_name_reply_markup():
-    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True, row_width=2)
     with open('banks.txt', 'r') as file:
         for banks in file.readlines():
             markup.add(KeyboardButton(banks.strip()))
@@ -1218,7 +1217,7 @@ def liquidation_confirmation(message):
                      reply_markup=liquidate_confirmation_markup())
 
 
-@bot.callback_query_handler(state=MyStates.liquidate_enter_bank_name, func=lambda call: call.data.startswith("liquidate_confirmation_"))
+@bot.callback_query_handler(state=MyStates.liquidate_enter_bank_name, func=lambda call: call.data.startswith("liquidate_confirmation"))
 def liquidation_confirmation(call):
     u_id = call.from_user.id
     c_id = call.message.chat.id
@@ -1242,7 +1241,7 @@ def liquidation_confirmation(call):
         bot.send_message(
             c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
-    elif call.data == "liquidate_confirmation_no":
+    else:
         bot.send_message(
             chat_id=c_id, text=f"Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
