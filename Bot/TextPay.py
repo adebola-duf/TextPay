@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from telebot.storage import StateMemoryStorage
 from telebot.handler_backends import State, StatesGroup  # states
 from telebot import custom_filters
@@ -670,10 +670,12 @@ def actual_send_to_other(amount_to_send_message):
 
     elif amount_to_send == 0:
         bot.reply_to(amount_to_send_message,
-                     "You can't text nothing 😂")
+                     "You can't text nothing 😂.This time please enter a correct amount. #numbers only or you can click /cancel to cancel.")
+        return
     else:
         bot.reply_to(amount_to_send_message,
-                     "You can't text someone a -ve amount. Math gee 😂")
+                     "You can't text someone a -ve amount. Math gee 😂. This time please enter a correct amount. #numbers only or you can click /cancel to cancel.")
+        return
 
     bot.delete_state(sender_id, chat_id=c_id)
 
@@ -1164,6 +1166,14 @@ def account_number(message):
                   MyStates.liquidate_enter_account_number, message.chat.id)
 
 
+def bank_name_reply_markup():
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    with open('banks.txt', 'r') as file:
+        for banks in file.readlines():
+            markup.add(KeyboardButton(banks.strip()))
+    return markup
+
+
 @bot.message_handler(state=MyStates.liquidate_enter_account_number)
 def account_number(message):
     u_id = message.from_user.id
@@ -1182,7 +1192,8 @@ def account_number(message):
 
     with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
         user_data["account_number"] = int(account_number)
-    bot.reply_to(message, "Please now send the bank name.")
+    bot.reply_to(message, "Please now send the bank name. Enter one of the options presented in the keyboard.",
+                 reply_markup=bank_name_reply_markup())
     bot.set_state(u_id, MyStates.liquidate_enter_bank_name, c_id)
 
 
@@ -1203,7 +1214,7 @@ def liquidation_confirmation(message):
         amount_to_liquidate = user_data["amount_to_liquidate"]
         bank_name = user_data["bank_name"]
         account_number = user_data["account_number"]
-    bot.send_message(message.chat.id, f"Are you sure you want to liquidate ₦{amount_to_liquidate} to {bank_name.upper()}: {account_number}?",
+    bot.send_message(message.chat.id, f"Are you sure you want to liquidate ₦{amount_to_liquidate} to {bank_name}: {account_number}?",
                      reply_markup=liquidate_confirmation_markup())
 
 
@@ -1323,12 +1334,6 @@ uvicorn.run(app=app,
 
 
 # PROBLEMS
-# When a user deletes their wallet, it deletes only transactions that they initiated. So if they click transaction history,
-#  they would still see that someone texted them money. But they won't sha see that they texted anyone money
-
-# when you want to text money to someone using their user_id, there should be a way to like confirm who you are texting to
-# so a reply would be how much do you want to text to <username of the corresponding user_id> or <first name last name of the corresponding uer_id>
-
 
 # so i just thought of something. how to use the bot for transactions in offline mode. so when you are online, you generate a qr code that contains your user_id,
 # the amount and the id of the recipient so you can take your device around even when you are offline and you can pay for something by scanning the qr code.
