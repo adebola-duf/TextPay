@@ -1222,18 +1222,18 @@ def liquidation_confirmation(message):
 def liquidation_confirmation(call):
     u_id = call.from_user.id
     c_id = call.message.chat.id
+    with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
+        user_password = user_data["password"]
+        wallet_balance = user_data["wallet_balance"]
+        amount_to_liquidate = user_data["amount_to_liquidate"]
+        account_number = user_data["account_number"]
+        bank_name = user_data["bank_name"]
     if call.data == "liquidate_confirmation_no":
         bot.send_message(
             chat_id=c_id, text=f"Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
 
-    if call.data == "liquidate_confirmation_yes":
-        with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
-            user_password = user_data["password"]
-            wallet_balance = user_data["wallet_balance"]
-            amount_to_liquidate = user_data["amount_to_liquidate"]
-            account_number = user_data["account_number"]
-            bank_name = user_data["bank_name"]
+    elif call.data == "liquidate_confirmation_yes":
 
         # i feel we should also represent this in the transactions table so wehen you want to see your transaaction history, you'd see a place wehn you liquidated
         update_user_wallet_balance_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s"
