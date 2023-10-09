@@ -442,7 +442,7 @@ def authenticate_password_for_delete(entered_password_message):
             # what if the person has 100.2
             # also implement the part where they give you their account number
             bot.send_message(entered_password_message.chat.id,
-                             f"Your wallet has been deleted.😞😞. You should receive {user_wallet_balance - 100} in about 10 minutes.")
+                             f"Your wallet has been deleted.😞😞. You should receive ₦{user_wallet_balance - 100} in about 10 minutes.")
             # amount_to
             amount_to_send = user_wallet_balance - 100
             notify_bot.send_message(
@@ -1154,6 +1154,10 @@ def account_number(message):
     with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
         wallet_balance = user_data["wallet_balance"]
         user_data["amount_to_liquidate"] = amount_to_liquidate
+    if amount_to_liquidate < 100:
+        bot.send_message(
+            chat_id=c_id, text="You can't liquidate less than ₦100. Try again or click /cancel to cancel")
+        return
     if wallet_balance < amount_to_liquidate:
         bot.send_message(
             c_id, f"You don't have up to ₦{amount_to_liquidate} in your wallet since you have only ₦{wallet_balance} left. You can try again or click /cancel to cancel.")
@@ -1242,7 +1246,7 @@ def liquidation_confirmation(call):
                 cursor.execute(
                     update_user_wallet_balance_in_users_wallet_table_sql, (amount_to_liquidate, u_id))
                 connection.commit()
-        notify_bot.send_message(
+        bot.send_message(
             5024452557, f"`{u_id}` just liquidated ₦`{amount_to_liquidate}`\. You are meant to send ₦`{amount_to_liquidate}` to acct no: `{account_number}`, bank: `{bank_name}`\.", parse_mode="MarkdownV2")
         bot.send_message(
             c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.", reply_markup=ReplyKeyboardRemove())
