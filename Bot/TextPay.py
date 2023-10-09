@@ -1242,6 +1242,10 @@ def liquidation_confirmation(call):
         bot.send_message(
             c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
+    elif call.data == "liquidate_confirmation_no":
+        bot.send_message(
+            "Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
+        bot.delete_state(u_id, c_id)
 
 
 class UserDetails(BaseModel):
