@@ -1244,7 +1244,7 @@ def liquidation_confirmation(call):
         bot.delete_state(u_id, c_id)
     elif call.data == "liquidate_confirmation_no":
         bot.send_message(
-            "Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
+            chat_id=c_id, text=f"Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
 
 
