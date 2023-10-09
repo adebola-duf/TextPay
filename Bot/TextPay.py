@@ -1166,7 +1166,8 @@ def account_number(message):
 
 
 def bank_name_reply_markup():
-    markup = ReplyKeyboardMarkup(one_time_keyboard=True, row_width=2)
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.row_width = 2
     with open('banks.txt', 'r') as file:
         for banks in file.readlines():
             markup.add(KeyboardButton(banks.strip()))
@@ -1221,6 +1222,11 @@ def liquidation_confirmation(message):
 def liquidation_confirmation(call):
     u_id = call.from_user.id
     c_id = call.message.chat.id
+    if call.data == "liquidate_confirmation_no":
+        bot.send_message(
+            chat_id=c_id, text=f"Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
+        bot.delete_state(u_id, c_id)
+
     if call.data == "liquidate_confirmation_yes":
         with bot.retrieve_data(user_id=u_id, chat_id=c_id) as user_data:
             user_password = user_data["password"]
@@ -1240,10 +1246,6 @@ def liquidation_confirmation(call):
             5024452557, f"`{u_id}` just liquidated ₦`{amount_to_liquidate}`\. You are meant to send ₦`{amount_to_liquidate}` to acct no: `{account_number}`, bank: `{bank_name}`\.", parse_mode="MarkdownV2")
         bot.send_message(
             c_id, f"You should receive ₦{amount_to_liquidate} in about 10 minutes. And you have ₦{wallet_balance - amount_to_liquidate} left in your wallet.", reply_markup=ReplyKeyboardRemove())
-        bot.delete_state(u_id, c_id)
-    else:
-        bot.send_message(
-            chat_id=c_id, text=f"Great!! You still have ₦{wallet_balance} in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(u_id, c_id)
 
 
