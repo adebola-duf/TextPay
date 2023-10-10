@@ -851,7 +851,7 @@ def scan_payment_qr(message):
     if result:
         markup = InlineKeyboardMarkup()
         qr_scanner_web_app = InlineKeyboardButton(
-            "Scan QR", web_app=WebAppInfo(url="https://mboretto.github.io/easy-qr-scan-bot/"))
+            "Scan QR", web_app=WebAppInfo(url="https://adebola-duf.github.io/qr-mini-app/"))
         markup.add(qr_scanner_web_app)
 
         bot.reply_to(message, "Make sure to copy the code generated.",
