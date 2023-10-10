@@ -10,12 +10,13 @@ import json
 import psycopg2
 import os
 from dotenv import load_dotenv
+import datetime
 
 load_dotenv(".env")
 db = os.getenv("DB_NAME")
 db_username = os.getenv("DB_USERNAME")
 db_password = os.getenv("DB_PASSWORD")
-db_host = os.getenv("DB_EXTERNAL_HOST")
+db_host = os.getenv("DB_INTERNAL_HOST")
 db_port = os.getenv("DB_PORT")
 
 
@@ -39,6 +40,9 @@ def handle_webhook_stuff_on_my_end(event):
     # they said something about sending a webhook event twice. So make sure if they send the same event twice, it doesn't credit the customer 2x
     # he second part after the and prolly doesn't matter because they only send the event after a successful charge.
     if event["event"] == "charge.success" and event["data"]["status"] == "success":
+        current_datetime = datetime.datetime.now()
+        sql_current_datetime_format = current_datetime.strftime(
+            "%Y-%m-%d %H:%M:%S")
         metadata: str = event["data"]["metadata"]
         index_of_first_opening_square_bracket_in_metadata: int = metadata.index(
             "[")
@@ -75,7 +79,9 @@ def handle_webhook_stuff_on_my_end(event):
                         "user_id": enterd_user_id,
                         "message": message,
                         "amount": str(amount_with_paystack_charge),
-                        "operation": "add_to_wallet"  # could be anything
+                        "operation": "add_to_wallet",  # could be anything
+                        "paystack_payment_reference": paystack_payment_reference,
+                        "time_of_payment": sql_current_datetime_format
                     }
                     response = requests.post(
                         f"https://textpay.onrender.com/send-notification-to-user", json=data)

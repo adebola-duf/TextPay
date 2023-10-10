@@ -12,12 +12,9 @@ import qrcode
 import io
 import random
 import qrcode
-from fastapi import FastAPI, HTTPException, status, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, status
 import uvicorn
 from pydantic import BaseModel
-import hashlib
-import hmac
-import requests
 from starlette.responses import JSONResponse
 
 # states storage
@@ -712,18 +709,18 @@ def transaction_history(message):
 
     else:
         for i, row in enumerate(results):
-            transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id = row
+            transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id, paystack_transaction_ref = row
             select_first_name_last_name_from_transactions_table_sql = "SELECT first_name, last_name FROM users_wallet WHERE user_id = %s"
             if user_id == sender_id:  # in the case where i was the one who sent not received.
                 cursor.execute(
                     select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
-                history += f"{i + 1}. At {time_of_transaction}, you texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}\n\n"
+                history += f"{i + 1}. At {time_of_transaction}, you texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}.\n\n"
             else:  # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                 cursor.execute(
                     select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
-                history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}\n\n"
+                history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}.\n\n"
             if sender_id == receiver_id:
                 history += f"{i + 1}. At {time_of_transaction}, you paid ₦{amount_transferred} into your wallet."
 
@@ -831,9 +828,6 @@ def qr_send_to_charger_confirmation_markup():
     markup.add(confirm_button, decline_button)
     return markup
 
-# you need to handle the error where the user that created a qr has deleted their wallet. trying to retrieve the user's data would return None and indexing this would return an error
-# also when a user that hasn't created a wallet is trying to create a qr or scan a qr
-
 
 @bot.message_handler(commands=['scan_payment_qr'])
 def scan_payment_qr(message):
@@ -851,7 +845,7 @@ def scan_payment_qr(message):
     if result:
         markup = InlineKeyboardMarkup()
         qr_scanner_web_app = InlineKeyboardButton(
-            "Scan QR", web_app=WebAppInfo(url="https://adebola-duf.github.io/qr-mini-app/"))
+            "Scan QR", web_app=WebAppInfo(url=os.getenv("QR_SCAN_URL")))
         markup.add(qr_scanner_web_app)
 
         bot.reply_to(message, "Make sure to copy the code generated.",
@@ -1270,6 +1264,8 @@ class NotificationData(BaseModel):
     operation: str = None
     authentication_token: str
     amount: str
+    paystack_payment_reference: str
+    time_of_payment: str
 
 
 @app.post("/send-notification-to-user")
@@ -1296,7 +1292,7 @@ def send_notification(notification_data: NotificationData):
                     cursor.execute(
                         update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
                     cursor.execute(insert_this_transaction_record_into_transactions_table,
-                                   (notification_data.user_id, notification_data.user_id, ))
+                                   (notification_data.user_id, notification_data.time_of_payment, notification_data.amount, notification_data.user_id, notification_data.paystack_payment_reference))
 
                     connection.commit()
                     bot.send_message(text=notification_data.message,
