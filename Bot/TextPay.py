@@ -711,6 +711,8 @@ def transaction_history(message):
         for i, row in enumerate(results):
             transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id, paystack_transaction_ref = row
             select_first_name_last_name_from_transactions_table_sql = "SELECT first_name, last_name FROM users_wallet WHERE user_id = %s"
+            if paystack_transaction_ref:
+                history += f"{i + 1}. At {time_of_transaction}, you paid ₦{amount_transferred} into your wallet."
             if user_id == sender_id:  # in the case where i was the one who sent not received.
                 cursor.execute(
                     select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
@@ -721,8 +723,6 @@ def transaction_history(message):
                     select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                 person2_first_name, person2_last_name = cursor.fetchone()
                 history += f"{i + 1}. At {time_of_transaction}, you received ₦{amount_transferred} from {person2_first_name} {person2_last_name}.\n\n"
-            if paystack_transaction_ref:
-                history += f"{i + 1}. At {time_of_transaction}, you paid ₦{amount_transferred} into your wallet."
 
         bot.reply_to(message, history)
 
