@@ -1284,7 +1284,7 @@ def send_notification(notification_data: NotificationData):
 
                 if result and notification_data.operation and notification_data.chat_id:
                     update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
-                    print("i'm about to do the insertion")
+
                     insert_this_transaction_record_into_transactions_table = """INSERT INTO transactions
                     (transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id, paystack_transaction_reference)
                     VALUES (DEFAULT, %s, %s, %s, %s, %s)"""
@@ -1293,7 +1293,6 @@ def send_notification(notification_data: NotificationData):
                         update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
                     cursor.execute(insert_this_transaction_record_into_transactions_table,
                                    (notification_data.user_id, notification_data.time_of_payment, notification_data.amount, notification_data.user_id, notification_data.paystack_payment_reference))
-                    print("I am done with the transaction")
 
                     connection.commit()
                     bot.send_message(text=notification_data.message,
@@ -1302,8 +1301,15 @@ def send_notification(notification_data: NotificationData):
                                         content="User notified successfully.")
                 elif result and notification_data.operation and not notification_data.chat_id:
                     update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+                    insert_this_transaction_record_into_transactions_table = """INSERT INTO transactions
+                    (transaction_id, receiver_id, time_of_transaction, amount_transferred, sender_id, paystack_transaction_reference)
+                    VALUES (DEFAULT, %s, %s, %s, %s, %s)"""
+
                     cursor.execute(
                         update_user_wallet_in_users_wallet_table_sql, (amount, notification_data.user_id))
+                    cursor.execute(insert_this_transaction_record_into_transactions_table,
+                                   (notification_data.user_id, notification_data.time_of_payment, notification_data.amount, notification_data.user_id, notification_data.paystack_payment_reference))
+
                     connection.commit()
                     # beware of sending to user_id rather than chat_id incase telegramm decide to make it a must to send message using only chat id.
                     bot.send_message(text=notification_data.message,
