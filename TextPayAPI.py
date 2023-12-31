@@ -1,3 +1,12 @@
+from app.utils import get_current_time
+from app.models import User_WalletUpdate, Transaction, BaseTransaction
+from app.crud import update_user_wallet, create_transaction
+from app.utils import verify_password
+from app.crud import delete_user_wallet
+from fastapi.responses import JSONResponse
+from app.crud import create_user_wallet
+from app.models import User_WalletCreate, User_WalletRead
+from app.crud import get_user_wallet
 from fastapi import FastAPI, Path, Query, HTTPException, status
 import uvicorn
 from typing import Optional
@@ -38,67 +47,28 @@ columns_in_users_wallet = ["user_id", "username", "first_name", "last_name",
                            "wallet_creation_date", "wallet_balance", "transaction_password"]
 
 
-@app.get(path="/user-info/{authentication_token}/{user_id}")
+@app.get(path="/user-info/{authentication_token}/{user_id}", response_model=User_WalletRead)
 def user_info(authentication_token: str, user_id: int):
+    user = get_user_wallet(user_id=user_id)
+
     if authentication_token == token:
-        with psycopg2.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                select_user_info_from_users_wallet_table = "SELECT * FROM users_wallet WHERE user_id = %s;"
-                cursor.execute(
-                    select_user_info_from_users_wallet_table, (user_id, ))
-                user_info = cursor.fetchone()
-                if user_info:
-                    user_info_dict: dict = {}
-                    for i, columns in enumerate(columns_in_users_wallet):
-                        user_info_dict[columns] = user_info[i]
-                    return user_info_dict
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail="User doesn't exist")
+        if user:
+            return user
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User doesn't exist")
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
 
 
-class User(BaseModel):
-    user_id: int
-    user_name: Optional[str] = None
-    first_name: str
-    last_name: str
-    wallet_balance: Decimal
-    transaction_password: str
-
-
-@app.post(path="/create-wallet/{authentication_token}")
-def create_user(authentication_token: str, user: User):
+@app.post(path="/create-wallet/{authentication_token}", response_model=User_WalletRead)
+def create_user(authentication_token: str, user: User_WalletCreate):
     if authentication_token == token:
-        with psycopg2.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                select_user_info_from_users_wallet_table = "SELECT user_id FROM users_wallet WHERE user_id = %s;"
-                cursor.execute(
-                    select_user_info_from_users_wallet_table, (user.user_id, ))
-                user_id = cursor.fetchone()
-                if user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists.")
-
-                insert_sql = """INSERT INTO users_wallet (user_id, first_name, last_name, wallet_creation_date, wallet_balance, username, transaction_password) VALUES (%s, %s, %s, %s, %s, %s, %s)"""
-                # i could have done something like cursor.execute(insert_sql, (user.keys())) # but what if the admin switches the postion to the key valyue pairs
-                user_id = user.user_id
-                username = user.user_name
-                first_name = user.first_name
-                last_name = user.last_name
-                wallet_balance = user.wallet_balance
-                transaction_password = user.transaction_password
-                current_datetime = datetime.datetime.now()
-                sql_current_datetime_format = current_datetime.strftime(
-                    "%Y-%m-%d %H:%M:%S")
-
-                cursor.execute(insert_sql, ([
-                               user_id, first_name, last_name, sql_current_datetime_format, wallet_balance, username, transaction_password]))
-                connection.commit()
-                raise HTTPException(
-                    status_code=status.HTTP_200_OK, detail="Wallet created")
+        user = get_user_wallet(user_id=User_WalletCreate.user_id)
+        if not user:
+            user = create_user_wallet(user)
+            return user
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -110,30 +80,23 @@ class DeleteAuthorization(BaseModel):
 
 
 # delete authorization is like the stuffs needed from the user to complete the transaction.
-@app.delete(path="/delete-user-wallet/{authentication_token}")
-def delete_user_wallet(authentication_token, delete_authorization: DeleteAuthorization):
+incorrect_matric_number_or_password_exception = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Incorrent matric number or password.")
+
+
+@app.delete(path="/delete-user-wallet/{authentication_token}", response_class=JSONResponse)
+def delete_user(authentication_token, delete_authorization: DeleteAuthorization):
     if authentication_token == token:
-        with psycopg2.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                select_user_password_from_users_wallet_table = "SELECT transaction_password FROM users_wallet WHERE user_id = %s;"
-                cursor.execute(
-                    select_user_password_from_users_wallet_table, (delete_authorization.user_id, ))
-                user_password = cursor.fetchone()
-                if user_password:
-                    user_password = user_password[0]
-                    if delete_authorization.user_password == user_password:
-                        delete_user_from_transactions_table_sql = "DELETE FROM transactions WHERE sender_id = %s"
-                        delete_user_from_qr_info_table_sql = "DELETE FROM qr_info WHERE user_id = %s;"
-                        delete_user_from_user_wallet_table_sql = "DELETE FROM users_wallet WHERE user_id = %s;"
-                        cursor.execute(
-                            delete_user_from_transactions_table_sql, (delete_authorization.user_id, ))
-                        cursor.execute(
-                            delete_user_from_qr_info_table_sql, (delete_authorization.user_id, ))
-                        cursor.execute(
-                            delete_user_from_user_wallet_table_sql, (delete_authorization.user_id, ))
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail="User doesn't exist.")
+        user = get_user_wallet(delete_authorization.user_id)
+        if user:
+            if verify_password(delete_authorization.user_password, user.transaction_password):
+                delete_user_wallet(delete_authorization.user_id)
+                return JSONResponse(status_code=status.HTTP_200_OK, content={"detail": "User Deleted"})
+            raise incorrect_matric_number_or_password_exception
+
+        else:
+            raise incorrect_matric_number_or_password_exception
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
@@ -149,43 +112,31 @@ class SenderReceiver(BaseModel):
 @app.put(path="/text-to-other/{authentication_token}")
 def text_to_other(authentication_token: str, sender_receiver: SenderReceiver):
     if authentication_token == token:
-        with psycopg2.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                select_sender_or_reciver_id_from_users_wallet_table = "SELECT user_id, transaction_password, wallet_balance FROM users_wallet WHERE user_id = %s;"
-                cursor.execute(
-                    select_sender_or_reciver_id_from_users_wallet_table, (sender_receiver.sender_id, ))
-                sender_id = cursor.fetchone()
-                cursor.execute(
-                    select_sender_or_reciver_id_from_users_wallet_table, (sender_receiver.receiver_id, ))
-                receiver_id = cursor.fetchone()
+        sender = get_user_wallet(user_id=SenderReceiver.sender_id)
+        receiver = get_user_wallet(user_id=SenderReceiver.receiver_id)
 
-                if sender_id:
-                    sender_id, sender_password, sender_wallet_balance = sender_id
-                    if sender_wallet_balance < sender_receiver.amount:
-                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                            detail=f"Sender doesn't have up to ₦{sender_receiver.amount}")
-                    if receiver_id:
-                        if sender_password == sender_receiver.sender_password:
-                            update_sender_wallet_balance_from_user_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance - %s WHERE user_id = %s;"
-                            cursor.execute(
-                                update_sender_wallet_balance_from_user_wallet_table_sql, (sender_receiver.amount, sender_id))
+        if sender:
+            if sender.wallet_balance < sender_receiver.amount:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail=f"Sender doesn't have up to ₦{sender_receiver.amount}")
+            if receiver:
+                if verify_password(plain_password=sender_receiver.sender_password, hashed_password=sender.transaction_password):
+                    update_user_wallet(user_id=sender.user_id, update_data=User_WalletUpdate(
+                        amount_to_update_wallet_balance=sender_receiver.amount, add_amount=False))
+                    update_user_wallet(user_id=receiver.user_id, update_data=User_WalletUpdate(
+                        amount_to_update_wallet_balance=sender_receiver.amount, add_amount=True))
+                    transaction = create_transaction(Transaction(receiver_id=receiver.id, time_of_transaction=get_current_time(
+                    ), amount_transferred=sender_receiver.amount, sender_id=sender.id))
 
-                            update_receiver_wallet_balance_in_user_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
-                            cursor.execute(update_receiver_wallet_balance_in_user_wallet_table_sql, (
-                                sender_receiver.amount, receiver_id[0]))
-
-                            connection.commit()
-                            raise HTTPException(
-                                status_code=status.HTTP_202_ACCEPTED, detail=f"{sender_id} texted ₦{sender_receiver.amount} to {receiver_id[0]}")
-                        else:
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user password.")
-                    else:
-                        raise HTTPException(
-                            status_code=status.HTTP_404_NOT_FOUND, detail="Receiver doesn't exist.")
+                    return BaseTransaction.model_validate(transaction).model_dump(exclude_unset=True)
                 else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail="Sender doesn't exist.")
+                    raise incorrect_matric_number_or_password_exception
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Receiver doesn't exist.")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sender doesn't exist.")
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
@@ -260,12 +211,14 @@ def transaction_history(authentication_token: str, user_id: int, number_transact
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{
+                                amount_transferred} to {person2_first_name} {person2_last_name}"
                         else:  # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{amount_transferred} from {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{
+                                amount_transferred} from {person2_first_name} {person2_last_name}"
 
                     return transaction_dict
     else:
@@ -301,4 +254,5 @@ def send_notification(authentication_token, notification_data: NotificationData)
                                 detail="User has been notified.")
 
 
-uvicorn.run(app=app, host="0.0.0.0")
+if __name__ == "__main__":
+    uvicorn.run(app=app, host="0.0.0.0")
