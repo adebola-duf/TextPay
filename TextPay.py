@@ -500,23 +500,19 @@ def transaction_history(message: Message):
         for i, transaction in enumerate(all_transactions):
 
             if transaction.type_transaction == "paystack_payment":
-                history += f"{i + 1}. At {transaction.time_of_transaction}, you paid ₦{
-                    transaction.amount_transferred} into your wallet.\n\n"
+                history += f"{i + 1}. At {transaction.time_of_transaction}, you paid ₦{transaction.amount_transferred} into your wallet.\n\n"
             # in the case where i was the one who sent not received.
             elif transaction.type_transaction == "transfer":
                 if user_id == transaction.sender_id:
                     receiver = get_user_wallet(user_id=transaction.receiver_id)
-                    history += f"{i + 1}. At {transaction.time_of_transaction}, you texted ₦{
-                        transaction.amount_transferred} to {receiver.first_name} {receiver.last_name}.\n\n"
+                    history += f"{i + 1}. At {transaction.time_of_transaction}, you texted ₦{transaction.amount_transferred} to {receiver.first_name} {receiver.last_name}.\n\n"
                 # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                 elif user_id == transaction.receiver_id:
                     sender = get_user_wallet(user_id=transaction.sender_id)
-                    history += f"{i + 1}. At {transaction.time_of_transaction}, you received ₦{
-                        transaction.amount_transferred} from {sender.first_name} {sender.last_name}.\n\n"
+                    history += f"{i + 1}. At {transaction.time_of_transaction}, you received ₦{transaction.amount_transferred} from {sender.first_name} {sender.last_name}.\n\n"
 
             elif transaction.type_transaction == "liquidate":
-                history += f"{i + 1}. At {transaction.time_of_transaction}, you liquidated ₦{transaction.amount_transferred} to Acct Number: {
-                    transaction.acct_number_liquidated_to} Bank: {transaction.bank_acct_number_belongs_to}.\n\n"
+                history += f"{i + 1}. At {transaction.time_of_transaction}, you liquidated ₦{transaction.amount_transferred} to Acct Number: {transaction.acct_number_liquidated_to} Bank: {transaction.bank_acct_number_belongs_to}.\n\n"
         bot.reply_to(message, history)
 
 

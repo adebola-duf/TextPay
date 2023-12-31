@@ -211,14 +211,12 @@ def transaction_history(authentication_token: str, user_id: int, number_transact
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{
-                                amount_transferred} to {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}"
                         else:  # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{
-                                amount_transferred} from {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{amount_transferred} from {person2_first_name} {person2_last_name}"
 
                     return transaction_dict
     else:

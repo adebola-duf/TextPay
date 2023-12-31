@@ -55,8 +55,7 @@ def handle_webhook_stuff_on_my_end(event):
                 return
 
             # if the that payment reference doesn't exist
-            message = f"You have just added ₦{amount_without_paystack_charge} into your wallet, ₦{
-                paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+            message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
             data = {
                 "authentication_token": os.getenv('ADMIN_PASSWORD'),
                 "user_id": enterd_user_id,
