@@ -170,19 +170,14 @@ def confirmation_message(message: Message):
 
 @bot.callback_query_handler(state=[MyStates.registration_info_given], func=lambda call: call.data.startswith("cb_name"))
 def callback_query(call: CallbackQuery):
-    print("registration info given", call.data)
     user_id, chat_id = get_user_id_and_chat_id_from_message_or_call(call=call)
     if call.data == "cb_name_confirmation_yes":
-        print("user pressed the yes button")
         with bot.retrieve_data(user_id=user_id, chat_id=chat_id) as user_data:
-            print("entering the get state")
             state_data_gotten = get_state_data(
                 existing_state_data=user_data["state_data"], state_data_to_get=StateDataToGet(first_name=True, last_name=True, transaction_password=True, username=True))
             user_first_name, user_last_name, user_password, username = state_data_gotten.first_name, state_data_gotten.last_name, state_data_gotten.transaction_password, state_data_gotten.username
         user_wallet = User_Wallet(user_id=user_id, username=username, first_name=user_first_name, last_name=user_last_name, wallet_creation_date=get_current_time(), transaction_password=get_password_hash(user_password))
-        print("user wallet:", user_wallet)
         user = create_user_wallet(user_wallet=user_wallet)
-        print("user: ", user)
         bot.send_message(
             chat_id=chat_id, text=f"{user_first_name} {user_last_name}, your wallet has been created 👍. To add money into your wallet click /make_payment")
         bot.delete_state(user_id=user_id, chat_id=chat_id)
@@ -635,7 +630,6 @@ def scanned_qr_code_content_handler(qr_code_content_message: Message):
         return
 
     qr_info = get_qr_info(qr_id=qr_id, user_id=charger_id)
-    print("qr info", qr_info)
 
     if qr_info:
         if qr_info.qr_used == False:
@@ -990,7 +984,7 @@ bot.set_webhook(
 if __name__ == "__main__":
     uvicorn.run(app=app, host="0.0.0.0")
 
-bot.polling()
+# bot.polling()
 
 # PROBLEMS
 
