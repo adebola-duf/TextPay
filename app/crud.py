@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Optional
 from sqlmodel import Session, select
 from .models import User_Wallet, QR_Info, Transaction, User_WalletUpdate, QR_InfoUpdate
 from .database import engine

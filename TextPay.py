@@ -15,8 +15,8 @@ from fastapi import FastAPI, HTTPException, status
 import uvicorn
 from fastapi.responses import JSONResponse
 
-from app.models import MyStates, User_Wallet, User_WalletUpdate, Transaction, QR_Info, QR_InfoUpdate, NotificationData, QRData
-from app.crud import get_user_wallet, create_user_wallet, delete_user_wallet, update_user_wallet, create_transaction, get_transactions, update_qr_info, get_qr_info, create_qr_info
+from app.models import MyStates, User_Wallet, Transaction, QR_Info, QR_InfoUpdate, NotificationData, QRData
+from app.crud import get_user_wallet, create_user_wallet, delete_user_wallet, update_user_wallet, get_transactions, update_qr_info, get_qr_info, create_qr_info
 from app.utils import get_password_hash, verify_password, welcome_message, get_user_id_and_chat_id_from_message_or_call, get_current_time, create_qr
 
 # states storage
@@ -26,7 +26,7 @@ load_dotenv(".env")
 textpaybot_token = os.getenv("TEXT_PAY_BOT_TOKEN")
 notifybot_token = os.getenv("NOTIFY_BOT_TOKEN")
 
-# WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
 
 bot = telebot.TeleBot(textpaybot_token, state_storage=state_storage)
 notify_bot = telebot.TeleBot(notifybot_token)
@@ -980,14 +980,13 @@ bot.add_custom_filter(custom_filter=custom_filters.IsDigitFilter())
 bot.remove_webhook()
 
 # Set webhook
-# bot.set_webhook(
-#     url=WEBHOOK_URL_BASE + textpaybot_token
-# )
+bot.set_webhook(
+    url=WEBHOOK_URL_BASE + textpaybot_token
+)
 
-# uvicorn.run(app=app,
-#             host="0.0.0.0")
+uvicorn.run(app=app,
+            host="0.0.0.0")
 
-bot.polling()
 
 
 # PROBLEMS
