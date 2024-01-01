@@ -7,7 +7,7 @@ from pydantic import model_validator, BaseModel
 
 
 class BaseUser_Wallet(SQLModel):
-    username: str = Field(max_length=40, index=True)
+    username: str = Field(max_length=40, index=True, default=None)
     first_name: str = Field(max_length=40)
     last_name: str = Field(max_length=40)
 
