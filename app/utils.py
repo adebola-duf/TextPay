@@ -97,8 +97,7 @@ def create_qr(qr_data: QRData):
         box_size=10,
         border=2
     )
-    qr.add_data(f"{qr_data.user_id}:{
-                qr_data.amount_to_charge}:{qr_data.qr_id}")
+    qr.add_data(f"{qr_data.user_id}:{qr_data.amount_to_charge}:{qr_data.qr_id}")
     qr_img = qr.make_image(back_color="white", fill_color='black')
 
     # We create a io.BytesIO buffer to store the QR code image in memory without saving it as a file.
