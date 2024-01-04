@@ -1,10 +1,8 @@
-from app.crud import get_transactions
 import os
 from dotenv import load_dotenv
 import requests
 import json
 import os
-from dotenv import load_dotenv
 import hmac
 import hashlib
 
@@ -13,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, status, BackgroundTasks
 from fastapi.responses import JSONResponse
 
 from app.utils import get_current_time
+from app.crud import get_transactions
 
 load_dotenv(".env")
 
@@ -57,7 +56,6 @@ def handle_webhook_stuff_on_my_end(event):
             # if the that payment reference doesn't exist
             message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
             data = {
-                "authentication_token": os.getenv('ADMIN_PASSWORD'),
                 "user_id": enterd_user_id,
                 "message": message,
                 "amount": str(amount_with_paystack_charge),
@@ -66,7 +64,7 @@ def handle_webhook_stuff_on_my_end(event):
                 "time_of_payment": get_current_time()
             }
             response = requests.post(
-                f"https://textpay.onrender.com/send-notification-to-user", json=data)
+                f"https://textpay.onrender.com/send-notification-to-user", json=data, headers={"Authorization": f"Bearer {os.getenv("NOTIFICATION_TOKEN")}"})
             if response.status_code == 404:
                 print(response.json()["detail"])
             elif response.status_code == 401:

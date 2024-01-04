@@ -930,11 +930,12 @@ def liquidation_confirmation(call: CallbackQuery):
         bot.send_message(
             chat_id, f"You should receive ₦{amount_to_liquidate} to {bank_name}: {account_number} in about 10 minutes. And you have ₦{sender.wallet_balance} left in your wallet.", reply_markup=ReplyKeyboardRemove())
         bot.delete_state(user_id, chat_id)
-
-
+from fastapi.security import HTTPBearer
+from fastapi import Depends
+token_auth_scheme = HTTPBearer()
 @app.post("/send-notification-to-user")
-def send_notification(notification_data: NotificationData):
-    if notification_data.authentication_token != os.getenv("ADMIN_PASSWORD"):
+def send_notification(notification_data: NotificationData, token = Depends(token_auth_scheme)):
+    if token != os.getenv("NOTIFICATION_TOKEN"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Authentication key is wrong.")
     else:
