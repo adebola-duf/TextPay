@@ -16,8 +16,7 @@ from app.crud import get_transactions
 load_dotenv(".env")
 
 app = FastAPI()
-secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"),
-               'UTF-8')
+secret = bytes(os.getenv("PAYSTACK_SECRET_KEY"), 'UTF-8')
 
 load_dotenv(".env")
 
@@ -54,7 +53,8 @@ def handle_webhook_stuff_on_my_end(event):
                 return
 
             # if the that payment reference doesn't exist
-            message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+            message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{
+                paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
             data = {
                 "user_id": enterd_user_id,
                 "message": message,
@@ -63,17 +63,17 @@ def handle_webhook_stuff_on_my_end(event):
                 "paystack_payment_reference": paystack_payment_reference,
                 "time_of_payment": get_current_time()
             }
-            response = requests.post(
-                f"https://textpay.onrender.com/send-notification-to-user", json=data, headers={"Authorization": f"Bearer {os.getenv("NOTIFICATION_TOKEN")}"})
-            if response.status_code == 404:
-                print(response.json()["detail"])
-            elif response.status_code == 401:
-                print(response.json()["detail"])
-            elif response.status_code == 200:
-                print(
-                    f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
-                print(response.content.decode("utf-8"))
-            return
+            response = requests.post(f"https://textpay.onrender.com/send-notification-to-user",
+                                     json=data, headers={"Authorization": f"Bearer {os.getenv("NOTIFICATION_TOKEN")}"})
+            # if response.status_code == 404:
+            #     print(response.json()["detail"])
+            # elif response.status_code == 401:
+            #     print(response.json()["detail"])
+            # elif response.status_code == 200:
+            #     print(
+            #         f"successful payment of ₦{amount_without_paystack_charge} by {first_name} {last_name}, user id: {enterd_user_id}. A fee of ₦{paystack_charge} was deducted. So you have just paid ₦{amount_with_paystack_charge}")
+            #     print(response.content.decode("utf-8"))
+            # return
 
         print(event)
         # maybe you should send this message to my telegram using maybe notify bot
