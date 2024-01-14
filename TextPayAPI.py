@@ -5,16 +5,16 @@ from app.utils import verify_password
 from app.crud import delete_user_wallet
 from fastapi.responses import JSONResponse
 from app.crud import create_user_wallet
-from app.models import User_WalletCreate, User_WalletRead
-from app.crud import get_user_wallet
-from fastapi import FastAPI, Path, Query, HTTPException, status
+from app.models import User_WalletCreate, User_WalletRead, User_Wallet
+from app.crud import get_user_wallet, get_transactions
+from fastapi import FastAPI,  Query, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
-from typing import Optional
+from typing import Annotated
 from pydantic import BaseModel
 import psycopg2
 import os
 from dotenv import load_dotenv
-import datetime
 from decimal import Decimal
 import requests
 
@@ -32,7 +32,9 @@ connection_params = {"database": db,
                      "password": db_password,
                      "port": db_port}
 app = FastAPI()
-
+token_auth_scheme = HTTPBearer()
+HTTPExtractTokenDep = Annotated[HTTPAuthorizationCredentials, Depends(
+    token_auth_scheme)]
 # what i am doing is pretty much the database stuffs or the operations but in an API form
 
 
@@ -47,9 +49,10 @@ columns_in_users_wallet = ["user_id", "username", "first_name", "last_name",
                            "wallet_creation_date", "wallet_balance", "transaction_password"]
 
 
-@app.get(path="/user-info/{authentication_token}/{user_id}", response_model=User_WalletRead)
-def user_info(authentication_token: str, user_id: int):
+@app.get(path="/user-info/{user_id}", response_model=User_WalletRead)
+def user_info(authentication_token: HTTPExtractTokenDep, user_id: int):
     user = get_user_wallet(user_id=user_id)
+    authentication_token = authentication_token.credentials
 
     if authentication_token == token:
         if user:
@@ -62,12 +65,12 @@ def user_info(authentication_token: str, user_id: int):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
 
 
-@app.post(path="/create-wallet/{authentication_token}", response_model=User_WalletRead)
-def create_user(authentication_token: str, user: User_WalletCreate):
+@app.post(path="/create-wallet", response_model=User_WalletRead)
+def create_user(authentication_token: HTTPExtractTokenDep, user: User_WalletCreate):
     if authentication_token == token:
-        user = get_user_wallet(user_id=User_WalletCreate.user_id)
+        user = get_user_wallet(user_id=user.user_id)
         if not user:
-            user = create_user_wallet(user)
+            user = create_user_wallet(User_Wallet.model_validate(user))
             return user
     else:
         raise HTTPException(
@@ -86,12 +89,12 @@ incorrect_matric_number_or_password_exception = HTTPException(
 
 
 @app.delete(path="/delete-user-wallet/{authentication_token}", response_class=JSONResponse)
-def delete_user(authentication_token, delete_authorization: DeleteAuthorization):
-    if authentication_token == token:
+def delete_user(authentication_token: HTTPExtractTokenDep, delete_authorization: DeleteAuthorization):
+    if authentication_token.credentials == token:
         user = get_user_wallet(delete_authorization.user_id)
         if user:
             if verify_password(delete_authorization.user_password, user.transaction_password):
-                delete_user_wallet(delete_authorization.user_id)
+                delete_user_wallet(user_id=delete_authorization.user_id)
                 return JSONResponse(status_code=status.HTTP_200_OK, content={"detail": "User Deleted"})
             raise incorrect_matric_number_or_password_exception
 
@@ -109,9 +112,9 @@ class SenderReceiver(BaseModel):
     amount: Decimal
 
 
-@app.put(path="/text-to-other/{authentication_token}")
-def text_to_other(authentication_token: str, sender_receiver: SenderReceiver):
-    if authentication_token == token:
+@app.put(path="/text-to-other")
+def text_to_other(authentication_token: HTTPExtractTokenDep, sender_receiver: SenderReceiver):
+    if authentication_token.credentials == token:
         sender = get_user_wallet(user_id=SenderReceiver.sender_id)
         receiver = get_user_wallet(user_id=SenderReceiver.receiver_id)
 
@@ -146,49 +149,59 @@ class AddToWallet(BaseModel):
     user_id: int
     amount: Decimal
 
+# you should not just be able to call this endpoint. Instead do it with the paystack webhook stuff
+# @app.put(path="/add-to-wallet/{authentication_token}")
+# def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWallet):
+#     if authentication_token == token:
+#         with psycopg2.connect(**connection_params) as connection:
+#             with connection.cursor() as cursor:
+#                 select_user_info_from_users_wallet_table = "SELECT * FROM users_wallet WHERE user_id = %s;"
+#                 cursor.execute(select_user_info_from_users_wallet_table,
+#                                (add_to_wallet_details.user_id, ))
+#                 user_info = cursor.fetchone()
+#                 if user_info:
+#                     update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
+#                     cursor.execute(update_user_wallet_in_users_wallet_table_sql,
+#                                    (add_to_wallet_details.amount, add_to_wallet_details.user_id))
+#                     connection.commit()
+#                     data = {
+#                         "user_id": add_to_wallet_details.user_id,
+#                         "message": f"You have just added ₦{add_to_wallet_details.amount} into your wallet. Thanks for texting with us 👍😉."
+#                     }
+#                     response = requests.put(
+#                         f"https://textpay.onrender.com/send-notification-to-user/{token}/", json=data)
 
-@app.put(path="/add-to-wallet/{authentication_token}")
-def add_to_user_wallet(authentication_token: str, add_to_wallet_details: AddToWallet):
+#                     if response.status_code == 200:
+#                         raise HTTPException(
+#                             status_code=status.HTTP_400_BAD_REQUEST, detail=f"You have added ₦{add_to_wallet_details.amount} to user id: {add_to_wallet_details.user_id}'s wallet and user has been notifed about their payment of ₦{add_to_wallet_details.amount} into their wallet")
+#                     elif response.status_code == 401:
+#                         raise HTTPException(
+#                             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticatio key is wrong.")
+#                     elif response.status_code == 400:
+#                         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+#                                             detail=f"user id: {add_to_wallet_details.user_id} doesn't exist.")
+
+#                 else:
+#                     raise HTTPException(
+#                         status_code=status.HTTP_404_NOT_FOUND, detail=f"user id: {add_to_wallet_details.user_id} doesn't exist")
+#     else:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+
+
+@app.get("/transaction-history/{user_id}")
+def transaction_history(authentication_token: HTTPExtractTokenDep, user_id: int, number_transactions: int = Query(default=10, gt=0)):
     if authentication_token == token:
-        with psycopg2.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                select_user_info_from_users_wallet_table = "SELECT * FROM users_wallet WHERE user_id = %s;"
-                cursor.execute(select_user_info_from_users_wallet_table,
-                               (add_to_wallet_details.user_id, ))
-                user_info = cursor.fetchone()
-                if user_info:
-                    update_user_wallet_in_users_wallet_table_sql = "UPDATE users_wallet SET wallet_balance = wallet_balance + %s WHERE user_id = %s;"
-                    cursor.execute(update_user_wallet_in_users_wallet_table_sql,
-                                   (add_to_wallet_details.amount, add_to_wallet_details.user_id))
-                    connection.commit()
-                    data = {
-                        "user_id": add_to_wallet_details.user_id,
-                        "message": f"You have just added ₦{add_to_wallet_details.amount} into your wallet. Thanks for texting with us 👍😉."
-                    }
-                    response = requests.put(
-                        f"https://textpay.onrender.com/send-notification-to-user/{token}/", json=data)
-
-                    if response.status_code == 200:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST, detail=f"You have added ₦{add_to_wallet_details.amount} to user id: {add_to_wallet_details.user_id}'s wallet and user has been notifed about their payment of ₦{add_to_wallet_details.amount} into their wallet")
-                    elif response.status_code == 401:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticatio key is wrong.")
-                    elif response.status_code == 400:
-                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                            detail=f"user id: {add_to_wallet_details.user_id} doesn't exist.")
-
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail=f"user id: {add_to_wallet_details.user_id} doesn't exist")
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
-
-
-@app.get("/transaction-history/{authentication_token}/{user_id}")
-def transaction_history(authentication_token: str, user_id: int, number_transactions: int = Query(default=10, gt=0)):
-    if authentication_token == token:
+        transactions_when_user_is_sender = get_transactions(sender_id=user_id)
+        transactions_when_user_is_receiver = get_transactions(
+            receiver_id=user_id)
+        if not transactions_when_user_is_receiver:
+            all_transactions = transactions_when_user_is_sender
+        elif not transactions_when_user_is_sender:
+            all_transactions = transactions_when_user_is_receiver
+        elif transactions_when_user_is_receiver and transactions_when_user_is_sender:
+            all_transactions = transactions_when_user_is_sender + \
+                transactions_when_user_is_receiver
         with psycopg2.connect(**connection_params) as connection:
             with connection.cursor() as cursor:
                 select_all_from_users_wallet_table_sql = """SELECT * FROM transactions
@@ -211,12 +224,14 @@ def transaction_history(authentication_token: str, user_id: int, number_transact
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (receiver_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{amount_transferred} to {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} texted ₦{
+                                amount_transferred} to {person2_first_name} {person2_last_name}"
                         else:  # i.e if user_id == receiver_id in the case where i wasn't the one sending but the one receiving.
                             cursor.execute(
                                 select_first_name_last_name_from_transactions_table_sql, (sender_id, ))
                             person2_first_name, person2_last_name = cursor.fetchone()
-                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{amount_transferred} from {person2_first_name} {person2_last_name}"
+                            transaction_dict[i] = f"At {time_of_transaction}, {user_id} received ₦{
+                                amount_transferred} from {person2_first_name} {person2_last_name}"
 
                     return transaction_dict
     else:

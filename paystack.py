@@ -24,8 +24,6 @@ app = FastAPI()
 
 
 def handle_webhook_stuff_on_my_end(event):
-    # they said something about sending a webhook event twice. So make sure if they send the same event twice, it doesn't credit the customer 2x
-    # I think i already handled the above problem by making use of paystack payment reference
     # The second part after the and prolly doesn't matter because they only send the event after a successful charge.
     if event["event"] == "charge.success" and event["data"]["status"] == "success":
         metadata: str = event["data"]["metadata"]

@@ -14,22 +14,12 @@ class BaseUser_Wallet(SQLModel):
 
 class User_WalletCreate(BaseUser_Wallet):
     user_id: int
-    wallet_balance: Decimal = Decimal(0)
-    wallet_creation_date: datetime
     transaction_password: str
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_if_wallet_balance_is_0(cls, data: dict) -> Any:
-        wallet_balance = data["wallet_balance"]
-        if wallet_balance != 0:
-            raise ValueError("The wallet balance has to be 0")
-        return data
 
 
 class User_WalletRead(BaseUser_Wallet):
     user_id: int
-    wallet_balance: Decimal = Decimal(0)
+    wallet_balance: Decimal
     wallet_creation_date: datetime
 
 
@@ -37,7 +27,7 @@ class User_Wallet(BaseUser_Wallet, table=True):
     user_id: int = Field(primary_key=True)
     transaction_password: str
     wallet_balance: Decimal = Decimal(0)
-    wallet_creation_date: datetime
+    wallet_creation_date: datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     transactions: list["Transaction"] = Relationship(back_populates="user")
     qrs: list["QR_Info"] = Relationship(back_populates="user")
 
@@ -48,7 +38,7 @@ class User_WalletUpdate(BaseUser_Wallet):
     last_name: str | None = Field(max_length=40, default=None)
     transaction_password: str | None = None
 
-    # i put before here so that if it passes this test, it still hasa to go through pydantic's test and if it fails that one. Then error
+    # i put before here so that if it passes this test, it still has to go through pydantic's test and if it fails that one. Then error
     @model_validator(mode="before")
     @classmethod
     def check_if_we_are_updating_wallet_balance(cls, data: Any) -> Any:
@@ -58,13 +48,6 @@ class User_WalletUpdate(BaseUser_Wallet):
             raise ValueError(
                 "You didn't indicate whether amount should be added or subtracted from user wallet")
         return data
-
-# user_data["charger_id"] = charger_id
-#                 user_data["amount_to_charge"] = amount_charger_wants_to_charge
-#                 user_data["qr_id"] = qr_id
-#                 user_data["no_trials_left"] = 5
-#                 user_data["charger_first_name"] = charger_first_name
-#                 user_data["charger_last_name"] = charger_last_name
 
 
 class StateData(SQLModel):
