@@ -51,8 +51,7 @@ def handle_webhook_stuff_on_my_end(event):
                 return
 
             # if the that payment reference doesn't exist
-            message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{
-                paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
+            message = f"You have just added ₦ {amount_without_paystack_charge} into your wallet, ₦{paystack_charge} was deducted as charges. So you paid ₦{amount_with_paystack_charge} into your wallet. Thanks for texting with us 👍😉."
             data = {
                 "user_id": enterd_user_id,
                 "message": message,
@@ -62,7 +61,7 @@ def handle_webhook_stuff_on_my_end(event):
                 "time_of_payment": get_current_time()
             }
             response = requests.post(f"https://textpay.onrender.com/send-notification-to-user",
-                                     json=data, headers={"Authorization": f"Bearer {os.getenv("NOTIFICATION_TOKEN")}"})
+                                     json=data, headers={"Authorization": f"Bearer {os.getenv('NOTIFICATION_TOKEN')}"})
             # if response.status_code == 404:
             #     print(response.json()["detail"])
             # elif response.status_code == 401:
